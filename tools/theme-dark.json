@@ -1,0 +1,29 @@
+{
+  "_": "Dark values for the tab colours: role (fg = text, bg = background, bd = border / outline / shadow) and the light hex, as tools/theme-vars.py names them. Navy surfaces, DynaBoost's own colours kept; code in VS Code's Dark+.",
+  "fg": {"be185d": "#f27fb8", "0369a1": "#5cb8ef", "4d7c0f": "#a3d45b", "475569": "#a8b4c8", 
+    "56637f": "#9aa8c7", "fff": "#fff", "1e6bff": "#6aa2ff", "10224e": "#e3e9f7", "e3b04b": "#e3b04b",
+    "1c6b32": "#4cc27a", "a11a1a": "#ff7b7b", "97a5c6": "#8d9bbb", "7a5410": "#f0c774", "9a6a12": "#f0c774",
+    "f3d58f": "#f3d58f", "1e4fb8": "#8fb4ff", "c42b1c": "#ff7b7b", "7c3aed": "#b794f6", "0000ff": "#569cd6",
+    "1f1f1f": "#d4d4d4", "8a95ad": "#7d8aa8", "b7791f": "#e0b25c", "0f766e": "#4fd1c5", "c2410c": "#ff9a5c",
+    "323130": "#e3e9f7", "201f1e": "#e3e9f7", "605e5c": "#9aa8c7", "6d28d9": "#b794f6", "3d4a66": "#b8c3dc",
+    "8a94ab": "#7d8aa8", "7a1414": "#ffb3b3", "8c96a8": "#6e7a96", "0b216f": "#e3e9f7", "000": "#fff",
+    "0451a5": "#9cdcfe", "a31515": "#ce9178", "098658": "#b5cea8", "af00db": "#c586c0", "008000": "#6a9955",
+    "795e26": "#dcdcaa", "800000": "#569cd6", "e50000": "#9cdcfe", "0431fa": "#ffd700", "319331": "#da70d6",
+    "7b3814": "#179fff"
+  },
+  "bg": {"2e9d5b": "#4cc27a", "fafbfe": "#16203a", 
+    "fff": "#121a2f", "1e6bff": "#1e6bff", "10224e": "#1b2f63", "dde3f0": "#26324f", "e3b04b": "#e3b04b",
+    "c6d0e4": "#34436a", "f5f7fc": "#0c1325", "e4f4e8": "#123322", "eef2f9": "#1a2440", "fdf1d6": "#2e2410",
+    "fde8e8": "#3a1616", "fffaf0": "#1f2233", "e9f1ff": "#172a55", "155ee0": "#155ee0", "fff3dc": "#2e2410",
+    "fdf3f2": "#3a1818", "f9fafd": "#10172b", "fff7e6": "#2e2410", "f7faff": "#16213d", "1c9b4a": "#1c9b4a",
+    "fdf8ec": "#2a2515", "f1f3f8": "#1a2238", "fff8e8": "#2e2410", "ffe1a1": "#5a4715", "f3f2f1": "#1a2238",
+    "f1eafe": "#2a1f45", "e3e7ee": "#2a3553", "fafbfd": "#10172b", "f3f6fb": "#182238"
+  },
+  "bd": {
+    "1e6bff": "#4d8dff", "10224e": "#2e4274", "dde3f0": "#26324f", "e3b04b": "#e3b04b", "1c6b32": "#4cc27a",
+    "a11a1a": "#ff7b7b", "c6d0e4": "#34436a", "97a5c6": "#5d6b8c", "edf1f8": "#1e2842", "fdf1d6": "#2e2410",
+    "f3d58f": "#6b5520", "c42b1c": "#ff7b7b", "e8d5a8": "#5a4a25", "7c3aed": "#b794f6", "eef2f8": "#1e2842",
+    "e3e8f2": "#26324f", "c9d3e6": "#34436a", "d9c8fb": "#4b3a78", "eef1f6": "#1e2842",
+    "1c9b4a": "#4cc27a"
+  }
+}

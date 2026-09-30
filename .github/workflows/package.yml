@@ -1,0 +1,71 @@
+# Builds the Chrome Web Store package whenever the version in manifest.json
+# changes on main, and attaches it to a GitHub Release v<version>.
+#
+# Optional: publish to the Chrome Web Store as well. Add these repository
+# secrets (Settings -> Secrets and variables -> Actions) and the last step
+# runs; without them it is skipped.
+#   CWS_EXTENSION_ID   the item id from the Developer Dashboard
+#   CWS_CLIENT_ID      OAuth client of a Google Cloud project with the
+#   CWS_CLIENT_SECRET  Chrome Web Store API enabled
+#   CWS_REFRESH_TOKEN  refresh token for that client
+# The first version has to be uploaded by hand in the dashboard - that is
+# what creates the item id.
+name: Package
+
+on:
+  push:
+    branches: [main]
+    paths: [manifest.json]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    env:
+      CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+      CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+      CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+      CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build zip
+        id: build
+        run: |
+          VERSION=$(jq -r .version manifest.json)
+          ZIP="dynaboost-$VERSION.zip"
+          zip -r "$ZIP" manifest.json background.js src \
+            icons/icon16.png icons/icon32.png icons/icon48.png icons/icon128.png
+          # Every file the manifest names must be in the package.
+          for f in $(jq -r '.content_scripts[].js[], .content_scripts[].css[]?, .web_accessible_resources[].resources[], .icons[], .background.service_worker' manifest.json | grep -v '\*'); do
+            unzip -l "$ZIP" "$f" > /dev/null || { echo "missing from package: $f"; exit 1; }
+          done
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.build.outputs.version }}"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "${{ steps.build.outputs.zip }}" --clobber
+          else
+            gh release create "$TAG" "${{ steps.build.outputs.zip }}" --title "DynaBoost ${{ steps.build.outputs.version }}" --generate-notes
+          fi
+
+      - name: Publish to Chrome Web Store
+        if: env.CWS_REFRESH_TOKEN != ''
+        run: |
+          TOKEN=$(curl -sf https://oauth2.googleapis.com/token \
+            -d client_id="$CWS_CLIENT_ID" -d client_secret="$CWS_CLIENT_SECRET" \
+            -d refresh_token="$CWS_REFRESH_TOKEN" -d grant_type=refresh_token | jq -r .access_token)
+          curl -sf -X PUT -H "Authorization: Bearer $TOKEN" -H "x-goog-api-version: 2" \
+            -T "${{ steps.build.outputs.zip }}" \
+            "https://www.googleapis.com/upload/chromewebstore/v1.1/items/$CWS_EXTENSION_ID" | tee upload.json
+          jq -e '.uploadState == "SUCCESS"' upload.json > /dev/null
+          curl -sf -X POST -H "Authorization: Bearer $TOKEN" -H "x-goog-api-version: 2" -H "Content-Length: 0" \
+            "https://www.googleapis.com/chromewebstore/v1.1/items/$CWS_EXTENSION_ID/publish" | tee publish.json

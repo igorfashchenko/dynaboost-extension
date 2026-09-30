@@ -1,0 +1,150 @@
+{
+  "manifest_version": 3,
+  "name": "DynaBoost",
+  "version": "2.37.8",
+  "description": "Toolbelt for Dynamics 365, Power Apps, Power Automate and Azure DevOps. Toggle features on and off from a side panel.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "scripting",
+    "storage",
+    "clipboardWrite",
+    "clipboardRead",
+    "offscreen",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "https://make.powerapps.com/*",
+    "https://make.powerautomate.com/*",
+    "https://*.dynamics.com/*",
+    "https://dev.azure.com/*",
+    "https://*.visualstudio.com/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "DynaBoost — show or hide the panel",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/*.png",
+        "src/features/flow-run-hook.js",
+        "src/features/flow-edit-hook.js",
+        "src/features/form-dump-hook.js",
+        "src/features/form-tools-hook.js"
+      ],
+      "matches": [
+        "https://make.powerapps.com/*",
+        "https://make.powerautomate.com/*",
+        "https://*.dynamics.com/*",
+        "https://dev.azure.com/*",
+        "https://*.visualstudio.com/*"
+      ]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://make.powerapps.com/*",
+        "https://make.powerautomate.com/*",
+        "https://*.dynamics.com/*",
+        "https://dev.azure.com/*",
+        "https://*.visualstudio.com/*"
+      ],
+      "exclude_matches": [
+        "https://code.visualstudio.com/*",
+        "https://marketplace.visualstudio.com/*",
+        "https://app.vssps.visualstudio.com/*",
+        "https://make.powerautomate.com/*/widgets/*",
+        "https://make.powerautomate.com/widgets/*"
+      ],
+      "css": [
+        "src/panel.css"
+      ],
+      "js": [
+        "src/core.js",
+        "src/theme-table.js",
+        "src/code-view.js",
+        "src/features/table-export.js",
+        "src/features/open-all.js",
+        "src/features/auto-advanced.js",
+        "src/features/classic-designer.js",
+        "src/features/advanced-find.js",
+        "src/features/system-jobs.js",
+        "src/features/solution-pins.js",
+        "src/features/flow-run-export.js",
+        "src/features/flow-edit.js",
+        "src/features/expand-all.js",
+        "src/features/wiki-expand.js",
+        "src/features/workflow.js",
+        "src/features/ado-workitem.js",
+        "src/features/ado-taskboard.js",
+        "src/features/form-logic.js",
+        "src/features/form-commands.js",
+        "src/features/form-dump.js",
+        "src/features/form-editor.js",
+        "src/features/logical-names.js",
+        "src/features/god-mode.js",
+        "src/features/copy-record.js",
+        "src/features/impersonate.js",
+        "src/features/journey.js",
+        "src/features/canvas-code.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://make.powerautomate.com/*/widgets/*",
+        "https://make.powerautomate.com/widgets/*"
+      ],
+      "js": [
+        "src/core.js",
+        "src/theme-table.js",
+        "src/code-view.js",
+        "src/features/flow-run-export.js",
+        "src/features/flow-edit.js",
+        "src/features/expand-all.js"
+      ],
+      "css": [
+        "src/panel.css"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://make.powerautomate.com/*"
+      ],
+      "js": [
+        "src/features/flow-edit-hook.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://*.gateway.prod.island.powerapps.com/*"
+      ],
+      "js": [
+        "src/features/canvas-code-hook.js"
+      ],
+      "all_frames": true,
+      "world": "MAIN",
+      "run_at": "document_idle"
+    }
+  ]
+}
