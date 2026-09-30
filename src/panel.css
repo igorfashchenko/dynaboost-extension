@@ -1,0 +1,2115 @@
+/* DynaBoost panel.
+   Namespaced under .db- and scoped to #dynaboost-root so it cannot leak into
+   the host page (Dynamics ships its own global CSS).
+
+   Colour split: navy for the header and the app mark, white for everything the
+   user has to read. Gold is the single accent - the rule under the header and
+   the underline on an active toggle. */
+
+#dynaboost-root {
+  --db-navy-900: #0a1738;
+  --db-navy-800: #10224e;
+  --db-blue: #1e6bff;
+  --db-blue-soft: #3d8bff;
+  --db-gold: #e3b04b;
+  --db-surface: #ffffff;
+  --db-surface-sunk: #f5f7fc;
+  --db-ink: #10224e;
+  --db-ink-soft: #56637f;
+  --db-hairline: #dde3f0;
+  --db-blue-tint: #e9f1ff;
+  --db-rose: #e0445f;
+  /* Tiles: a raised card for what works here, a switch on toggles. */
+  --db-tile: #ffffff;
+  --db-tile-line: #d3dbea;
+  --db-tile-shadow: 0 1px 2px rgba(16, 34, 78, 0.07), 0 2px 6px rgba(16, 34, 78, 0.04);
+  --db-tile-hover: #f3f6fc;
+  --db-tile-hover-line: #b3c2de;
+  --db-switch-off: #c9d2e3;
+  --db-switch-knob: #ffffff;
+
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 2147483000;
+  display: none;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+#dynaboost-root.db-open {
+  display: block;
+}
+
+#dynaboost-root * {
+  box-sizing: border-box;
+}
+
+#dynaboost-root button {
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ---------- Panel ---------- */
+
+.db-panel {
+  width: 336px;
+  max-height: calc(100vh - 24px);
+  display: flex;
+  flex-direction: column;
+  background: var(--db-surface);
+  color: var(--db-ink);
+  border: 1px solid var(--db-hairline);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px rgba(10, 23, 56, 0.28);
+  overflow: hidden;
+}
+
+.db-head {
+  position: relative;
+  padding: 14px 14px 13px;
+  background: linear-gradient(180deg, var(--db-navy-800), var(--db-navy-900));
+  color: #eef3ff;
+  border-bottom: 2px solid var(--db-gold);
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  overflow: hidden;
+}
+
+/* The golden rectangle and its spiral, from the app mark - the one
+ * decorative flourish, the same in the panel, the export dialog and every
+ * tab (DynaBoost.tabCss in core.js). */
+.db-head::after,
+.db-dialog::after {
+  content: "";
+  position: absolute;
+  right: -18px;
+  top: -14px;
+  width: 150px;
+  height: 93px;
+  background: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%22-1%20-1%20235%20146%22%20fill%3D%22none%22%20stroke%3D%22%23e3b04b%22%3E%3Cg%20stroke-width%3D%220.9%22%20opacity%3D%220.55%22%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%22233%22%20height%3D%22144%22%2F%3E%3Cpath%20d%3D%22M144%200V144M144%2089H233M178%2089V144M144%20110H178M165%2089V110M165%20102H178M170%20102V110%22%2F%3E%3C%2Fg%3E%3Cpath%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20d%3D%22M0%20144A144%20144%200%200%201%20144%200A89%2089%200%200%201%20233%2089A55%2055%200%200%201%20178%20144A34%2034%200%200%201%20144%20110A21%2021%200%200%201%20165%2089A13%2013%200%200%201%20178%20102A8%208%200%200%201%20170%20110%22%2F%3E%3C%2Fsvg%3E") no-repeat right top / contain;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.db-head > *,
+.db-dialog > * {
+  position: relative;
+  z-index: 1;
+}
+
+.db-dialog::after {
+  right: -22px;
+  top: -18px;
+  width: 210px;
+  height: 130px;
+  opacity: 0.4;
+}
+
+.db-head-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  flex: none;
+}
+
+.db-head-title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+/* The version sits by the name, small and dim - there when you look for
+ * it, out of the way when you do not. */
+.db-head-ver {
+  margin-left: 6px;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: #6f7fa6;
+  letter-spacing: 0.2px;
+  vertical-align: 1px;
+}
+
+.db-head-sub {
+  font-size: 12.5px;
+  color: #97a5c6;
+}
+
+.db-close {
+  margin-left: auto;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: #97a5c6;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.db-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #eef3ff;
+}
+
+/* ---------- Context strip ----------
+   What the page is about, with its id ready to copy. Sunk surface so it
+   reads as part of the frame, not as a tile. Green flash on copy. */
+
+.db-ctx {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  background: var(--db-surface-sunk);
+  border-bottom: 1px solid var(--db-hairline);
+  font-size: 12.5px;
+  color: var(--db-ink-soft);
+}
+
+.db-ctx-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.db-ctx-kind {
+  flex: none;
+  font-weight: 600;
+}
+
+.db-ctx-id {
+  font: 12px ui-monospace, Consolas, monospace;
+  color: var(--db-ink);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.db-ctx-id:hover {
+  color: var(--db-blue);
+}
+
+.db-ctx-sub {
+  flex-basis: 100%;
+  font-size: 11.5px;
+  color: #97a5c6;
+  overflow-wrap: anywhere;
+}
+
+.db-ctx-copy {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 6px;
+  background: var(--db-surface);
+  color: var(--db-ink-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.db-ctx-copy svg {
+  width: 16px;
+  height: 16px;
+}
+
+.db-ctx-copy:hover:enabled {
+  border-color: var(--db-blue);
+  color: var(--db-blue);
+}
+
+.db-ctx-copy:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.db-ctx-copied .db-ctx-copy {
+  border-color: #1c6b32;
+  background: #e4f4e8;
+  color: #1c6b32;
+}
+
+.db-ctx-copied .db-ctx-id {
+  color: #1c6b32;
+}
+
+.db-ctx-failed .db-ctx-copy {
+  border-color: #a11a1a;
+  background: #fde8e8;
+  color: #a11a1a;
+}
+
+.db-top:empty {
+  display: none;
+}
+
+.db-top {
+  padding: 10px 14px 2px;
+  background: var(--db-surface);
+  border-bottom: 1px solid var(--db-hairline);
+}
+
+/* ---------- My solutions (pinned) ---------- */
+
+.db-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px; /* the height of "+ Add", so folding does not jump */
+  margin-bottom: 9px;
+}
+
+.db-sec-folded {
+  margin-bottom: 8px;
+}
+
+.db-sec-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  font: 600 12.5px "Segoe UI", system-ui, sans-serif;
+  color: var(--db-ink-soft);
+  cursor: pointer;
+  text-align: left;
+}
+
+.db-sec-toggle svg {
+  transition: transform 0.15s;
+}
+
+.db-sec-folded .db-sec-toggle svg {
+  transform: rotate(-90deg);
+}
+
+.db-sec-toggle:hover {
+  color: var(--db-ink);
+}
+
+.db-sec-count {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--db-surface-sunk);
+  border: 1px solid var(--db-hairline);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.db-sec-add {
+  padding: 2px 9px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 12px;
+  background: var(--db-surface);
+  color: var(--db-blue);
+  font: 600 11.5px "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.db-sec-add:hover {
+  border-color: var(--db-blue);
+}
+
+.db-slots {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+/* Height follows the content, so both lines of a long name always show -
+   Segoe UI on Windows runs taller than a fixed height allows. Slots in a row
+   stretch to the tallest. */
+.db-slot {
+  position: relative;
+  min-width: 0;
+  min-height: 64px;
+  padding: 4px 7px 6px 8px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 8px;
+  background: var(--db-surface);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  /* Between the environment and the name: 3px was loose, 0 let the name
+     touch the environment line on Windows. 1.5px is the golden cut of the
+     3.9px between those two - 0.382 of it. */
+  gap: 1.5px;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-slot-full {
+  border-left: 3px solid var(--db-gold);
+}
+
+.db-slot-full:hover,
+.db-slot-full:focus-visible {
+  border-color: #b9c6de;
+  border-left-color: var(--db-gold);
+  background: #eef2f9;
+  outline: none;
+}
+
+/* The environment is the small print: one line. The solution is what you
+   look for: up to two lines before "...". */
+.db-slot-env {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10.5px;
+  line-height: 1.25;
+  color: var(--db-ink-soft);
+}
+
+.db-slot-sol {
+  /* Two lines at most, shortened with "..." by solution-pins.js (fitName),
+     not clipped: a CSS line clamp cuts the tails of "p", "g", "y" on the
+     second line - how deep depends on font and zoom. Nothing here hides. */
+  display: block;
+  font-size: 12px;
+  line-height: 1.3;
+  font-weight: 600;
+  color: var(--db-ink);
+  word-break: break-word;
+}
+
+.db-sec-note {
+  margin: -3px 0 8px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: #fff7e6;
+  color: #7a5410;
+  font: 12px "Segoe UI", system-ui, sans-serif;
+}
+
+.db-slot-tool {
+  position: absolute;
+  top: 3px;
+  display: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--db-hairline);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+  line-height: 22px;
+  text-align: center;
+  color: var(--db-ink-soft);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(16, 34, 78, 0.12);
+}
+
+.db-slot-edit {
+  left: 5px;
+}
+
+.db-slot-del {
+  right: 3px;
+}
+
+.db-slot-full:hover .db-slot-tool,
+.db-slot-full:focus-within .db-slot-tool {
+  display: block;
+}
+
+/* Both in the app's gold: clear on hover, quiet otherwise. */
+.db-slot-tool:hover,
+.db-slot-tool:focus-visible {
+  border-color: var(--db-gold);
+  color: #9a6a12;
+  background: #fff7e6;
+  outline: none;
+}
+
+.db-slot-empty {
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  background: var(--db-surface-sunk);
+  color: var(--db-ink-soft);
+}
+
+.db-slot-empty:hover {
+  border-color: var(--db-blue);
+  color: var(--db-blue);
+}
+
+.db-slot-plus {
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* Same size and weight as a solution name, in grey. */
+.db-slot-hint {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.db-slot-flash {
+  border-color: var(--db-gold);
+  background: #fff7e6;
+  box-shadow: 0 0 0 2px rgba(227, 176, 75, 0.35);
+}
+
+.db-slot-dragging {
+  opacity: 0.4;
+}
+
+.db-slot-over {
+  border-color: var(--db-blue);
+  border-style: solid;
+  background: var(--db-blue-tint);
+}
+
+.db-body {
+  padding: 14px 14px 6px;
+  background: var(--db-surface);
+  overflow-y: auto;
+}
+
+.db-group-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--db-ink-soft);
+  margin: 2px 0 9px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--db-hairline);
+}
+
+.db-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+  margin-bottom: 16px;
+}
+
+.db-empty {
+  padding: 10px 2px 18px;
+  font-size: 13px;
+  color: var(--db-ink-soft);
+}
+
+/* ---------- Tiles ---------- */
+
+.db-tile {
+  position: relative;
+  min-height: 92px;
+  padding: 13px 5px 14px;
+  border: 1px solid var(--db-tile-line);
+  border-radius: 8px;
+  background: var(--db-tile);
+  box-shadow: var(--db-tile-shadow);
+  color: var(--db-ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  text-align: center;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.db-tile svg {
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+
+/* Full colour on every tile that works here. The id outranks the rules of an
+   older DynaBoost still in a tab that was not reloaded after an update (it
+   greyed out toggles that were off). */
+#dynaboost-root .db-tile svg {
+  filter: none;
+  opacity: 1;
+}
+
+.db-tile-name {
+  font-size: 12.5px;
+  line-height: 1.25;
+}
+
+.db-tile:hover {
+  border-color: var(--db-tile-hover-line);
+  background: var(--db-tile-hover);
+}
+
+.db-tile:focus-visible {
+  outline: 2px solid var(--db-blue);
+  outline-offset: 1px;
+}
+
+/* Everything that works here is a raised card in full colour. A toggle says
+   on or off with the small switch in its corner - never by greying out, so
+   grey is left to mean one thing only: not on this page. */
+.db-tile-toggle::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 18px;
+  height: 10px;
+  border-radius: 5px;
+  background: radial-gradient(circle at 5px 50%, var(--db-switch-knob) 3px, transparent 3.5px), var(--db-switch-off);
+}
+
+.db-tile-toggle[aria-pressed="true"] {
+  background: var(--db-blue-tint);
+  border-color: var(--db-blue);
+  color: var(--db-navy-800);
+  font-weight: 600;
+}
+
+.db-tile-toggle[aria-pressed="true"]::before {
+  background: radial-gradient(circle at 13px 50%, #ffffff 3px, transparent 3.5px), var(--db-blue);
+}
+
+.db-tile-toggle[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  bottom: 6px;
+  width: 20px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--db-gold);
+}
+
+/* Shown only via "Show all": belongs to another page, so it is visible for
+   discovery but cannot be used here - flat, dashed and grey, under the
+   "On other pages" rule. */
+.db-tile-away,
+.db-tile-away:hover {
+  cursor: default;
+  border: 1px dashed var(--db-hairline);
+  background: transparent;
+  box-shadow: none;
+  color: var(--db-ink-soft);
+  opacity: 1;
+}
+
+#dynaboost-root .db-tile-away svg {
+  filter: grayscale(1);
+  opacity: 0.4;
+}
+
+.db-tile-away .db-tile-name {
+  opacity: 0.8;
+}
+
+.db-tile-away::before {
+  display: none;
+}
+
+.db-away-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--db-ink-soft);
+}
+
+.db-away-head::before,
+.db-away-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--db-hairline);
+}
+
+.db-group-away {
+  opacity: 0.65;
+}
+
+.db-foot {
+  padding: 10px 14px;
+  background: var(--db-surface-sunk);
+  border-top: 1px solid var(--db-hairline);
+  font-size: 12px;
+  color: var(--db-ink-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.db-scope {
+  flex: none;
+  margin-left: auto;
+  white-space: nowrap;
+  padding: 5px 13px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 20px;
+  background: var(--db-surface);
+  color: var(--db-ink-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.db-scope:hover {
+  border-color: var(--db-blue);
+  color: var(--db-blue);
+}
+
+/* ---------- Say thanks ----------
+   The heart is the only warm colour in the panel, and it only turns warm
+   when you reach for it: grey at rest, rose on hover and while the card is
+   open. The card itself stays in the navy / gold of the rest. */
+
+.db-thanks-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px 5px 10px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 20px;
+  background: var(--db-surface);
+  color: var(--db-ink-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.db-thanks-btn svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  transition: fill 0.15s, transform 0.2s;
+}
+
+.db-thanks-btn:hover,
+.db-thanks-open .db-thanks-btn {
+  border-color: #f3c3cb;
+  background: #fff5f7;
+  color: var(--db-rose);
+}
+
+.db-thanks-btn:hover svg,
+.db-thanks-open .db-thanks-btn svg {
+  fill: var(--db-rose);
+}
+
+.db-panel:not(.db-thanks-open) .db-thanks-btn:hover svg {
+  animation: db-beat 0.9s ease-in-out infinite;
+}
+
+/* One small pop as the card opens. */
+.db-thanks-open .db-thanks-btn svg {
+  animation: db-pop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes db-pop {
+  from { transform: scale(0.7); }
+  to { transform: scale(1); }
+}
+
+@keyframes db-beat {
+  0%, 100% { transform: scale(1); }
+  20% { transform: scale(1.18); }
+  40% { transform: scale(0.96); }
+  60% { transform: scale(1.1); }
+}
+
+/* Folds - the card and the crypto list open and shut instead of popping.
+ * The box animates grid-template-rows from 0fr to 1fr, which is the height
+ * of whatever is inside with no measuring in script; the clip hides the
+ * part that does not fit yet; the content fades and slides a few pixels,
+ * which the compositor does on its own. Shutting plays it back a little
+ * faster. visibility flips only once it is shut, so hidden buttons cannot
+ * take focus. Nothing runs while a fold is still. */
+.db-fold {
+  flex: none;
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition:
+    grid-template-rows 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0s linear 0.2s;
+}
+
+.db-fold-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.db-fold-clip > * {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.14s ease-in, transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.db-thanks-open .db-thanks,
+.db-qr-open .db-qr,
+.db-wallets-open .db-wallets {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition:
+    grid-template-rows 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s;
+}
+
+.db-thanks-open .db-thanks > .db-fold-clip > *,
+.db-qr-open .db-qr > .db-fold-clip > *,
+.db-wallets-open .db-wallets > .db-fold-clip > * {
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.22s ease-out 0.04s, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.db-thanks-in {
+  position: relative;
+  padding: 10px 14px 9px;
+  border-top: 2px solid var(--db-gold);
+  background: linear-gradient(180deg, #fffaf0, var(--db-surface) 70%);
+}
+
+.db-thanks-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.db-thanks-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--db-ink);
+}
+
+.db-thanks-said .db-thanks-title::after {
+  content: " \2665";
+  color: var(--db-rose);
+}
+
+.db-thanks-close {
+  width: 24px;
+  height: 24px;
+  margin: -4px -6px 0 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--db-ink-soft);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.db-thanks-close:hover {
+  background: var(--db-surface-sunk);
+  color: var(--db-ink);
+}
+
+.db-thanks-text {
+  margin: 2px 0 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--db-ink-soft);
+}
+
+.db-thanks-opt {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 11px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 8px;
+  background: var(--db-surface);
+  color: var(--db-ink);
+  text-align: left;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.db-thanks-opt > svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.db-thanks-opt:hover {
+  border-color: var(--db-blue);
+  background: var(--db-blue-tint);
+  text-decoration: none;
+}
+
+/* The main way: navy like the header, with the gold rule under it. */
+/* The pay button and, beside it, the QR one - a split button in the same
+ * navy, the QR half narrow, so the row still reads as one way to pay. */
+.db-thanks-payrow {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.db-thanks-payrow .db-thanks-pay {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.db-thanks-qrbtn {
+  flex: none;
+  width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--db-navy-900);
+  border-bottom: 2px solid var(--db-gold);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--db-navy-800), var(--db-navy-900));
+  color: #c9d4ee;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.db-thanks-qrbtn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.db-thanks-qrbtn:hover,
+.db-qr-open .db-thanks-qrbtn {
+  background: linear-gradient(180deg, #16306a, var(--db-navy-800));
+  color: var(--db-gold);
+  box-shadow: 0 4px 14px rgba(10, 23, 56, 0.25);
+}
+
+.db-qr-in {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  padding: 10px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.db-qr-code {
+  flex: none;
+  width: 118px;
+  height: 118px;
+  display: block;
+}
+
+.db-qr-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--db-ink-soft);
+}
+
+.db-qr-text b {
+  font-size: 13px;
+  color: var(--db-ink);
+}
+
+.db-thanks-pay,
+.db-thanks-pay:visited {
+  border-color: var(--db-navy-900);
+  border-bottom: 2px solid var(--db-gold);
+  background: linear-gradient(180deg, var(--db-navy-800), var(--db-navy-900));
+  color: #eef3ff;
+}
+
+.db-thanks-pay:hover {
+  border-color: var(--db-navy-900);
+  border-bottom-color: var(--db-gold);
+  background: linear-gradient(180deg, #16306a, var(--db-navy-800));
+  box-shadow: 0 4px 14px rgba(10, 23, 56, 0.25);
+  color: #fff;
+}
+
+.db-thanks-opt-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.db-thanks-opt-name {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.db-thanks-opt-sub {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--db-ink-soft);
+}
+
+.db-thanks-pay .db-thanks-opt-sub {
+  color: #97a5c6;
+}
+
+.db-thanks-opt-go {
+  margin-left: auto;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--db-ink-soft);
+  transition: transform 0.15s;
+}
+
+.db-thanks-pay .db-thanks-opt-go {
+  color: var(--db-gold);
+}
+
+.db-thanks-pay:hover .db-thanks-opt-go {
+  transform: translate(2px, -2px);
+}
+
+.db-thanks-chev {
+  font-size: 20px;
+}
+
+.db-wallets-open .db-thanks-chev {
+  transform: rotate(90deg);
+}
+
+.db-wallets-in {
+  margin-top: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 8px;
+  background: var(--db-surface-sunk);
+}
+
+.db-wallet {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+}
+
+.db-wallet + .db-wallet {
+  border-top: 1px solid var(--db-hairline);
+}
+
+.db-wallet-coin {
+  flex: none;
+  width: 28px;
+  height: 28px;
+}
+
+.db-wallet-coin svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.db-wallet-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.db-wallet-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--db-ink);
+}
+
+.db-wallet-net {
+  font-size: 11px;
+  color: var(--db-ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.db-wallet-addr {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 12px;
+  color: var(--db-ink);
+  cursor: copy;
+}
+
+.db-wallet-soon .db-wallet-addr {
+  font-family: inherit;
+  font-style: italic;
+  color: var(--db-ink-soft);
+  cursor: default;
+}
+
+.db-wallet-copy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 6px;
+  background: var(--db-surface);
+  color: var(--db-ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.db-wallet-copy svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.db-wallet-copy:hover {
+  border-color: var(--db-blue);
+  color: var(--db-blue);
+}
+
+.db-wallet-copy:active {
+  transform: translateY(1px);
+}
+
+.db-wallet-copied .db-wallet-copy,
+.db-wallet-copied .db-wallet-copy:hover {
+  border-color: #1c6b32;
+  background: #e4f4e8;
+  color: #1c6b32;
+}
+
+.db-wallet-copied .db-wallet-net {
+  color: #1c6b32;
+  font-weight: 600;
+}
+
+.db-wallet-failed .db-wallet-copy,
+.db-wallet-failed .db-wallet-net {
+  border-color: #a11a1a;
+  color: #a11a1a;
+}
+
+.db-wallets-note {
+  padding: 6px 0 4px;
+  border-top: 1px solid var(--db-hairline);
+  font-size: 11px;
+  color: var(--db-ink-soft);
+}
+
+.db-thanks-note {
+  margin-top: 7px;
+  font-size: 11px;
+  color: #8a95ad;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-thanks-btn svg {
+    animation: none !important;
+  }
+}
+
+/* ---------- Light / dark ----------
+   The button in the header, next to the cross. Dark mode is the same panel
+   on navy: the tokens change, and the few colours written out above get a
+   dark twin here. The header, already navy, stays as it is. */
+
+.db-theme {
+  margin-left: auto;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: #97a5c6;
+}
+
+.db-theme svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.db-theme:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--db-gold);
+}
+
+.db-theme + .db-close {
+  margin-left: 0;
+}
+
+/* The (i) before it opens the help page: the same button, the same gold on
+   hover. The header is navy in both modes, so it needs no dark twin. */
+.db-info {
+  margin-left: auto;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: #97a5c6;
+}
+
+.db-info svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.db-info:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--db-gold);
+}
+
+.db-info + .db-theme {
+  margin-left: 0;
+}
+
+#dynaboost-root.db-dark {
+  --db-blue: #4d8dff;
+  --db-blue-soft: #6aa2ff;
+  --db-surface: #121a2f;
+  --db-surface-sunk: #0c1325;
+  --db-ink: #e3e9f7;
+  --db-ink-soft: #9aa8c7;
+  --db-hairline: #26324f;
+  --db-blue-tint: #172a55;
+  --db-rose: #ff6b84;
+  --db-tile: #18223d;
+  --db-tile-line: #2c3a5e;
+  --db-tile-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --db-tile-hover: #1e2a4a;
+  --db-tile-hover-line: #41548a;
+  --db-switch-off: #3a4a72;
+  --db-switch-knob: #c3cde3;
+  color-scheme: dark;
+}
+
+#dynaboost-root.db-dark .db-panel {
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.55);
+}
+
+#dynaboost-root.db-dark .db-slot-full:hover,
+#dynaboost-root.db-dark .db-slot-full:focus-visible {
+  border-color: #3a4a72;
+  background: #18223d;
+}
+
+#dynaboost-root.db-dark .db-tile-toggle[aria-pressed="true"] {
+  color: var(--db-ink);
+}
+
+#dynaboost-root.db-dark .db-ctx-copied .db-ctx-copy,
+#dynaboost-root.db-dark .db-wallet-copied .db-wallet-copy,
+#dynaboost-root.db-dark .db-wallet-copied .db-wallet-copy:hover {
+  border-color: #4cc27a;
+  background: #123322;
+  color: #4cc27a;
+}
+
+#dynaboost-root.db-dark .db-ctx-copied .db-ctx-id,
+#dynaboost-root.db-dark .db-wallet-copied .db-wallet-net {
+  color: #4cc27a;
+}
+
+#dynaboost-root.db-dark .db-ctx-failed .db-ctx-copy,
+#dynaboost-root.db-dark .db-wallet-failed .db-wallet-copy,
+#dynaboost-root.db-dark .db-wallet-failed .db-wallet-net {
+  border-color: #ff7b7b;
+  background: #3a1616;
+  color: #ff7b7b;
+}
+
+#dynaboost-root.db-dark .db-sec-note,
+#dynaboost-root.db-dark .db-slot-flash {
+  background: #2e2410;
+  color: #f0c774;
+}
+
+#dynaboost-root.db-dark .db-slot-tool {
+  background: var(--db-surface);
+}
+
+#dynaboost-root.db-dark .db-slot-tool:hover,
+#dynaboost-root.db-dark .db-slot-tool:focus-visible {
+  background: #2e2410;
+  color: #f0c774;
+}
+
+#dynaboost-root.db-dark .db-thanks-btn:hover,
+#dynaboost-root.db-dark .db-thanks-open .db-thanks-btn {
+  border-color: #6b2a38;
+  background: #2a1520;
+}
+
+#dynaboost-root.db-dark .db-thanks-in {
+  background: linear-gradient(180deg, #1c2236, var(--db-surface) 70%);
+}
+
+/* The navy buttons would sink into a navy card: a lighter edge keeps them. */
+#dynaboost-root.db-dark .db-thanks-pay,
+#dynaboost-root.db-dark .db-thanks-pay:hover,
+#dynaboost-root.db-dark .db-thanks-qrbtn {
+  border-color: #2e4274;
+  border-bottom-color: var(--db-gold);
+  background: linear-gradient(180deg, #1b2f63, #12214a);
+}
+
+/* The QR code keeps its own white square - a phone reads dark on light. */
+#dynaboost-root.db-dark .db-qr-in {
+  background: var(--db-surface-sunk);
+}
+
+/* Dialogs opened over the page from the panel follow it. */
+.db-overlay.db-dark .db-dialog {
+  background: #121a2f;
+  color: #e3e9f7;
+  color-scheme: dark;
+}
+
+.db-overlay.db-dark .db-dialog-head button,
+.db-overlay.db-dark .db-status,
+.db-overlay.db-dark .db-pin-form label,
+.db-overlay.db-dark .db-pin-note {
+  color: #9aa8c7;
+}
+
+.db-overlay.db-dark .db-output,
+.db-overlay.db-dark .db-pin-form input {
+  border-color: #26324f;
+  background: #0c1325;
+  color: #e3e9f7;
+}
+
+.db-overlay.db-dark .db-dialog-actions button {
+  border-color: #34436a;
+  background: #121a2f;
+  color: #e3e9f7;
+}
+
+.db-overlay.db-dark .db-dialog-actions button:hover {
+  border-color: #4d8dff;
+  color: #6aa2ff;
+}
+
+.db-overlay.db-dark .db-dialog-actions button.db-primary {
+  border-color: #1e6bff;
+  background: #1e6bff;
+  color: #fff;
+}
+
+/* ---------- Export dialog ---------- */
+
+.db-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483100;
+  background: rgba(6, 14, 34, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.db-dialog {
+  position: relative;
+  overflow: hidden;
+  width: 80%;
+  max-width: 900px;
+  max-height: 80%;
+  padding: 18px;
+  border-radius: 10px;
+  background: #fff;
+  color: #10224e;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.db-dialog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.db-dialog-head button {
+  border: none;
+  background: none;
+  font-size: 18px;
+  color: #56637f;
+  cursor: pointer;
+}
+
+.db-status {
+  font-size: 14px;
+  color: #56637f;
+}
+
+.db-output {
+  flex: 1;
+  min-height: 300px;
+  width: 100%;
+  padding: 10px;
+  font: 13px ui-monospace, Consolas, monospace;
+  color: #10224e;
+  background: #f5f7fc;
+  border: 1px solid #dde3f0;
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.db-dialog-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.db-dialog-actions button {
+  padding: 8px 14px;
+  border: 1px solid #c6d0e4;
+  border-radius: 6px;
+  background: #fff;
+  color: #10224e;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.db-dialog-actions button:hover {
+  border-color: var(--db-blue, #1e6bff);
+  color: #1e6bff;
+}
+
+/* ---------- My solutions dialog ---------- */
+
+.db-dialog.db-pins {
+  width: 440px;
+  max-width: calc(100% - 32px);
+  max-height: 86%;
+  overflow: auto;
+  font-size: 13.5px;
+}
+
+.db-pin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.db-pin-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #56637f;
+}
+
+.db-pin-form input {
+  padding: 8px 10px;
+  border: 1px solid #c6d0e4;
+  border-radius: 6px;
+  font: 14px "Segoe UI", system-ui, sans-serif;
+  color: #10224e;
+  background: #fff;
+}
+
+.db-pin-form input:focus {
+  outline: 2px solid #1e6bff;
+  outline-offset: -1px;
+}
+
+.db-pin-fields {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 10px;
+}
+
+.db-pin-fields[hidden] {
+  display: none;
+}
+
+.db-pin-note {
+  min-height: 1em;
+  font-size: 12.5px;
+  color: #56637f;
+}
+
+.db-pin-form .db-dialog-actions {
+  margin-top: -4px;
+}
+
+.db-dialog-actions button.db-primary {
+  background: #1e6bff;
+  border-color: #1e6bff;
+  color: #fff;
+  font-weight: 600;
+}
+
+.db-dialog-actions button.db-primary:hover {
+  background: #155ee0;
+  color: #fff;
+}
+
+.db-dialog-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---------- Impersonate dialog ----------
+   A search over the environment's users: favorites and recent ones first, a
+   row per user with initials, name, email, business unit and a star. The
+   user this tab works as sits on top in the blue of the frame on the page;
+   a favorite's star is the panel's gold. */
+
+.db-dialog.db-imp {
+  width: 460px;
+  max-width: calc(100% - 32px);
+  max-height: 86%;
+  font-size: 13.5px;
+  gap: 10px;
+}
+
+.db-imp-working,
+.db-imp-working * {
+  cursor: progress !important;
+}
+
+.db-imp-lead {
+  margin-top: -4px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #56637f;
+}
+
+.db-imp-now {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #b9d0ff;
+  border-radius: 8px;
+  background: #eef4ff;
+}
+
+.db-imp-now .db-imp-av {
+  background: #1e6bff;
+  color: #fff;
+}
+
+.db-imp-stop {
+  flex: none;
+  padding: 6px 13px;
+  border: 1px solid #c6d0e4;
+  border-radius: 6px;
+  background: #fff;
+  color: #10224e;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.db-imp-stop:hover {
+  border-color: #e0445f;
+  color: #c62f4b;
+}
+
+.db-imp-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid #c6d0e4;
+  border-radius: 7px;
+  background: #fff;
+  color: #56637f;
+  cursor: text;
+}
+
+.db-imp-search:focus-within {
+  border-color: #1e6bff;
+  box-shadow: 0 0 0 1px #1e6bff;
+}
+
+.db-imp-search svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.db-imp-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: 14px "Segoe UI", system-ui, sans-serif;
+  color: #10224e;
+}
+
+.db-imp-label {
+  margin: 8px 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #56637f;
+}
+
+.db-imp-label:first-child {
+  margin-top: 0;
+}
+
+.db-imp-note:empty,
+.db-imp-list:empty {
+  display: none;
+}
+
+.db-imp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  margin: 0 -6px;
+  padding: 0 6px;
+  overflow: auto;
+}
+
+.db-imp-row {
+  box-sizing: border-box;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-imp-row.db-imp-on {
+  border-color: #cfe0ff;
+  background: #e9f1ff;
+}
+
+.db-imp-row[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.db-imp-row.db-imp-busy {
+  opacity: 1;
+}
+
+.db-imp-av {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #e9f1ff;
+  color: #1e6bff;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.db-imp-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.db-imp-who b,
+.db-imp-who span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-imp-who b {
+  font-weight: 600;
+}
+
+.db-imp-who span {
+  font-size: 12px;
+  color: #56637f;
+}
+
+.db-imp-go {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e6bff;
+  visibility: hidden;
+}
+
+.db-imp-on .db-imp-go,
+.db-imp-busy .db-imp-go {
+  visibility: visible;
+}
+
+/* The star shows on the marked row, on the user this tab works as, and
+   always once it is lit. */
+.db-imp-star {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: -4px -4px -4px -2px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a97b5;
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.db-imp-star svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+}
+
+.db-imp-on .db-imp-star,
+.db-imp-now .db-imp-star,
+.db-imp-star[aria-pressed="true"],
+.db-imp-star:focus-visible {
+  visibility: visible;
+}
+
+.db-imp-star:hover {
+  background: rgba(30, 107, 255, 0.1);
+  color: #1e6bff;
+}
+
+.db-imp-star[aria-pressed="true"],
+.db-imp-star[aria-pressed="true"]:hover {
+  color: #d99a1e;
+}
+
+.db-imp-star[aria-pressed="true"] svg {
+  fill: #e3b04b;
+}
+
+.db-imp-star:focus-visible {
+  outline: 2px solid #1e6bff;
+  outline-offset: -2px;
+}
+
+.db-imp-note {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #56637f;
+}
+
+.db-imp-note.db-imp-err {
+  color: #c62f4b;
+}
+
+.db-imp-foot {
+  padding-top: 9px;
+  border-top: 1px solid #dde3f0;
+  font-size: 12px;
+  color: #56637f;
+}
+
+.db-overlay.db-dark .db-imp-lead,
+.db-overlay.db-dark .db-imp-label,
+.db-overlay.db-dark .db-imp-who span,
+.db-overlay.db-dark .db-imp-note,
+.db-overlay.db-dark .db-imp-foot {
+  color: #9aa8c7;
+}
+
+.db-overlay.db-dark .db-imp-foot {
+  border-top-color: #26324f;
+}
+
+.db-overlay.db-dark .db-imp-note.db-imp-err {
+  color: #ff6b84;
+}
+
+.db-overlay.db-dark .db-imp-now {
+  border-color: #2f55a8;
+  background: #13234a;
+}
+
+.db-overlay.db-dark .db-imp-now .db-imp-av {
+  background: #1e6bff;
+  color: #fff;
+}
+
+.db-overlay.db-dark .db-imp-star {
+  color: #6f7fa6;
+}
+
+.db-overlay.db-dark .db-imp-star:hover {
+  background: rgba(77, 141, 255, 0.16);
+  color: #6aa2ff;
+}
+
+.db-overlay.db-dark .db-imp-star[aria-pressed="true"],
+.db-overlay.db-dark .db-imp-star[aria-pressed="true"]:hover {
+  color: #f0c060;
+}
+
+.db-overlay.db-dark .db-imp-star[aria-pressed="true"] svg {
+  fill: #f0c060;
+}
+
+.db-overlay.db-dark .db-imp-star:focus-visible {
+  outline-color: #4d8dff;
+}
+
+.db-overlay.db-dark .db-imp-stop {
+  border-color: #34436a;
+  background: #121a2f;
+  color: #e3e9f7;
+}
+
+.db-overlay.db-dark .db-imp-stop:hover {
+  border-color: #ff6b84;
+  color: #ff6b84;
+}
+
+.db-overlay.db-dark .db-imp-search {
+  border-color: #26324f;
+  background: #0c1325;
+  color: #9aa8c7;
+}
+
+.db-overlay.db-dark .db-imp-search:focus-within {
+  border-color: #4d8dff;
+  box-shadow: 0 0 0 1px #4d8dff;
+}
+
+.db-overlay.db-dark .db-imp-search input {
+  color: #e3e9f7;
+}
+
+.db-overlay.db-dark .db-imp-row.db-imp-on {
+  border-color: #2c4a8a;
+  background: #172a55;
+}
+
+.db-overlay.db-dark .db-imp-av {
+  background: #172a55;
+  color: #6aa2ff;
+}
+
+.db-overlay.db-dark .db-imp-go {
+  color: #6aa2ff;
+}
+
+/* ---------- Impersonate on the page ----------
+   Outside #dynaboost-root, like the toast: it shows whether the panel is
+   open or not, for as long as the tab works as someone else. A frame round
+   the window in the panel's blue with a faint haze from its edges, as God
+   mode has in gold (neither takes a click; the middle of the page stays as
+   it is), and a tab on the bottom edge - the middle of the bottom is free on forms and grids alike.
+   God mode keeps the gold and the top, so the two never look alike. The
+   name switches user, the × stops. */
+
+#dynaboost-imp {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482001;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 3px rgba(30, 107, 255, 0.92), inset 0 0 90px 18px rgba(30, 107, 255, 0.13);
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+#dynaboost-imp * {
+  box-sizing: border-box;
+}
+
+#dynaboost-imp .db-imp-tab {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100vw - 40px);
+  padding: 3px 5px 3px 11px;
+  border-radius: 10px 10px 0 0;
+  background: #1e6bff;
+  color: #fff;
+  box-shadow: 0 -2px 10px rgba(6, 14, 34, 0.25);
+  font-size: 13px;
+  line-height: 22px;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+#dynaboost-imp svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+
+#dynaboost-imp .db-imp-tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+#dynaboost-imp button {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+#dynaboost-imp .db-imp-name {
+  gap: 6px;
+  min-width: 0;
+  padding: 0 6px;
+  font-weight: 600;
+}
+
+#dynaboost-imp .db-imp-name span {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#dynaboost-imp .db-imp-name svg {
+  width: 13px;
+  height: 13px;
+  opacity: 0.75;
+}
+
+#dynaboost-imp .db-imp-x {
+  width: 22px;
+  height: 22px;
+  font-size: 17px;
+  line-height: 1;
+}
+
+#dynaboost-imp button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+#dynaboost-imp button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+
+/* On a dark page the frame and haze go a shade lighter to stay seen; the tab
+   keeps the deeper blue, where white text reads best. */
+#dynaboost-imp.db-dark {
+  box-shadow: inset 0 0 0 3px rgba(77, 141, 255, 0.95), inset 0 0 90px 18px rgba(77, 141, 255, 0.16);
+}
+
+#dynaboost-imp.db-dark .db-imp-tab {
+  background: #1e6bff;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------- Toast ----------
+   Lives outside #dynaboost-root: the panel is display:none unless open, and a
+   confirmation has to show whether the panel is open or not. Bottom right,
+   stacked, navy card with the same gold hairline as the panel header. */
+
+#dynaboost-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2147483200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  pointer-events: none;
+}
+
+#dynaboost-toast * {
+  box-sizing: border-box;
+}
+
+.db-toast {
+  pointer-events: auto;
+  width: 316px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  border-left: 3px solid #e3b04b;
+  background: #10224e;
+  color: #eef3ff;
+  box-shadow: 0 8px 24px rgba(10, 23, 56, 0.32);
+  animation: db-toast-in 160ms ease-out;
+}
+
+.db-toast-error {
+  border-left-color: #e06055;
+}
+
+@keyframes db-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.db-toast-out {
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.db-toast-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.db-toast-mark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: #1e6bff;
+  color: #fff;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+}
+
+.db-toast-error .db-toast-mark {
+  background: #e06055;
+}
+
+.db-toast-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.db-toast-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.db-toast-sub {
+  font-size: 12.5px;
+  color: #97a5c6;
+  line-height: 1.35;
+}
+
+.db-toast-sub:empty {
+  display: none;
+}
+
+.db-toast-close {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #97a5c6;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.db-toast-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #eef3ff;
+}
+
+.db-toast-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 9px 0 0 29px;
+}
+
+.db-toast-actions:empty {
+  display: none;
+}
+
+.db-toast-actions button {
+  padding: 5px 10px;
+  border: 1px solid #35477a;
+  border-radius: 5px;
+  background: transparent;
+  color: #cddaf6;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.db-toast-actions button:hover:enabled {
+  border-color: #3d8bff;
+  color: #fff;
+}
+
+.db-toast-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.db-toast-actions button:focus-visible {
+  outline: 2px solid #3d8bff;
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #dynaboost-root * {
+    transition: none !important;
+  }
+
+  .db-toast {
+    animation: none;
+  }
+
+  .db-toast-out {
+    transition: none;
+  }
+}
