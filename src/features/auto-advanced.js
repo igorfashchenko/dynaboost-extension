@@ -1,6 +1,7 @@
-/* Feature: Open column details. The New / Edit column panel hides Schema
- * name, Auto number and more behind "Advanced options"; this opens it as the
- * panel renders. Labels in several UI languages. */
+/* Feature: Open advanced options. The New / Edit table and New / Edit column
+ * panels hide Schema name, Type, Record ownership, Auto number, Searchable
+ * and more behind "Advanced options"; this opens it as the panel renders.
+ * Labels in several UI languages. */
 (function () {
   const ICON =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
@@ -19,15 +20,37 @@
     'geavanceerde opties'
   ];
 
-  // Toggles we already clicked. Used only when the element gives us no
-  // aria-expanded to read, to avoid clicking it open then shut again.
-  const clicked = new WeakSet();
+  // Side panels, drawers and dialogs - where the toggle lives.
+  const PANES = '[role="dialog"], [role="complementary"], aside, .ms-Panel, [class*="Panel"], [class*="Drawer"], [class*="drawer"]';
+  const TOGGLES = 'button, a, [role="button"], summary, .ms-Link';
+  const TABLE_PAGES = /\/(entities|tables)(\/|$)|\/solutions\/[^/]+/i;
+  const SETTLE = 1500;
+
+  // Toggles the user clicked themselves: theirs from then on, so one they
+  // close stays closed.
+  const byUser = new WeakSet();
+  // toggle -> { at, n }: our last click on it and how many so far
+  const tried = new WeakMap();
+  const TRIES = 3;
+  // Panes where a toggle without aria-expanded was clicked. Such a toggle may
+  // be drawn again after the click, so it is clicked once per pane.
+  const opened = new WeakSet();
 
   let observer = null;
   let timer = null;
 
+  // Icon fonts put their glyph (private use area) in the text, before or
+  // after the label.
+  function labelOf(el) {
+    return (el.textContent || '')
+      .replace(/[\uE000-\uF8FF]/g, '')
+      .replace(/\s+/g, ' ')
+      .replace(/^[^\p{L}]+|[^\p{L})]+$/gu, '')
+      .toLowerCase();
+  }
+
   function isAdvancedToggle(el) {
-    const t = (el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const t = labelOf(el);
     if (!t || t.length > 40) return false;
     return ADVANCED_LABELS.some((l) => t === l || t.startsWith(l));
   }
@@ -38,53 +61,77 @@
   }
 
   function expand() {
-    // Cheap guard: the toggle only lives inside a panel or dialog, so skip the
-    // much more expensive scan on ordinary page mutations.
-    if (!document.querySelector('[role="dialog"], .ms-Panel, [class*="Panel"]')) return;
+    const roots = Array.from(document.querySelectorAll(PANES));
+    // The table pages may show the properties outside any pane.
+    if (TABLE_PAGES.test(location.pathname) && document.body) roots.push(document.body);
+    if (!roots.length) return;
 
-    const candidates = document.querySelectorAll('button, a, [role="button"], summary, .ms-Link');
-    for (const el of candidates) {
-      if (!isAdvancedToggle(el)) continue;
-      if (!isVisible(el)) continue;
-
-      const expanded = el.getAttribute('aria-expanded');
-      if (expanded === 'true') {
-        clicked.add(el);
-        continue;
+    const seen = new Set();
+    const now = Date.now();
+    let retry = 0;
+    for (const root of roots) {
+      for (const el of root.querySelectorAll(TOGGLES)) {
+        if (seen.has(el) || byUser.has(el)) continue;
+        seen.add(el);
+        if (!isAdvancedToggle(el) || !isVisible(el)) continue;
+        const state = el.getAttribute('aria-expanded');
+        if (state === 'true') continue;
+        if (state === null) {
+          const pane = el.closest(PANES) || document.body;
+          if (opened.has(pane)) continue;
+          opened.add(pane);
+        } else {
+          const mine = tried.get(el) || { at: 0, n: 0 };
+          if (mine.n >= TRIES) continue;
+          if (now - mine.at < SETTLE) {
+            retry = Math.max(retry, SETTLE - (now - mine.at) + 50);
+            continue;
+          }
+          tried.set(el, { at: now, n: mine.n + 1 });
+          retry = Math.max(retry, SETTLE + 50);
+        }
+        el.click();
       }
-      if (expanded === null && clicked.has(el)) continue;
-
-      clicked.add(el);
-      el.click();
     }
+    // A click that did not take gets another once the pane has settled, up
+    // to TRIES in all.
+    if (retry) schedule(retry);
   }
 
-  function schedule() {
+  function onUserClick(e) {
+    if (!e.isTrusted || !e.target || !e.target.closest) return;
+    const el = e.target.closest(TOGGLES);
+    if (el) byUser.add(el);
+  }
+
+  function schedule(delay) {
     clearTimeout(timer);
     // Small delay so React finishes rendering the panel and attaches its click
     // handlers before we fire.
-    timer = setTimeout(expand, 200);
+    timer = setTimeout(expand, delay || 200);
   }
 
   DynaBoost.register({
     id: 'auto-advanced',
-    name: 'Open column details',
-    group: 'Columns',
+    name: 'Open advanced options',
+    group: 'Tables and columns',
     hosts: ['make.powerapps.com'],
-    when: () => /\/(entities|tables)\//i.test(location.pathname),
-    hint: 'In the New / Edit column panel, expands "Advanced options" for you so Schema name, Auto number and Searchable are visible straight away',
+    when: () => TABLE_PAGES.test(location.pathname),
+    hint: 'In the New / Edit table and column panels, expands "Advanced options" for you - Schema name, Type, Record ownership, Auto number, Searchable in view straight away',
     icon: ICON,
     defaultOn: true,
     onEnable() {
       if (observer) return;
-      observer = new MutationObserver(schedule);
+      observer = new MutationObserver(() => schedule());
       observer.observe(document.documentElement, { childList: true, subtree: true });
+      document.addEventListener('click', onUserClick, true);
       schedule();
     },
     onDisable() {
       if (!observer) return;
       observer.disconnect();
       observer = null;
+      document.removeEventListener('click', onUserClick, true);
       clearTimeout(timer);
     }
   });

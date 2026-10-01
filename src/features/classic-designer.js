@@ -6,6 +6,7 @@
  * the maker's environment list or asked once, and kept in chrome.storage.sync
  * per environment. */
 (function () {
+  if (DynaBoost.off) return;
   const ICON =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
     '<path d="M13 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" stroke="#3D8BFF" stroke-width="1.6" stroke-linecap="round"/>' +

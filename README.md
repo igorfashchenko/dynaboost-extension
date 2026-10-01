@@ -16,7 +16,8 @@ opens it (`src/help.html`), at the tools of the page you are on.
 | --- | --- | --- | --- |
 | Export table | action | maker portal lists | Scrolls the biggest grid on the page to collect every row; Markdown or CSV in a dialog |
 | Open on All | toggle, on by default | Tables and Apps pages | Clicks "All" once per visit (per path), only in a row of tabs holding a known neighbour ("Recommended"/"Custom", "My apps"/"Shared with me"); labels in 7 UI languages; elsewhere a DOM change costs one path test |
-| Open column details | toggle, on by default | New / Edit column panel | Clicks "Advanced options"; labels in 7 UI languages |
+| Open advanced options | toggle, on by default | New / Edit table and column panels | Clicks "Advanced options" in panels, drawers and dialogs (on table and solution pages anywhere); icon-font glyphs ignored; a toggle without `aria-expanded` is clicked once, one the user clicks is left alone; labels in 7 UI languages |
+| Column defaults | toggle, on by default | New column panel | Only in a pane headed "New column" (7 UI languages); unchecks "Allow form fill assistance" (English label) once per checkbox; a checkbox the user clicks is left alone; rules in `RULES` |
 | Open in classic | action | inside a solution | Classic solution explorer on that solution; the org host per environment in `chrome.storage.sync` (`DynaBoost.orgHost`, shared with Advanced Find) |
 | Advanced Find | action | Dynamics apps; maker portal in an environment | `https://{org}/main.aspx?pagetype=advancedfind` |
 | System jobs | action | Dynamics apps; maker portal in an environment | `asyncoperation`, view "All System Jobs" |
@@ -34,7 +35,7 @@ opens it (`src/help.html`), at the tools of the page you are on.
 | Impersonate | toggle, this tab | `*.crm*.dynamics.com` | A `declarativeNetRequest` session rule per tab (id = tab id): `MSCRMCallerID` on `xmlhttprequest`, `requestDomains` and `initiatorDomains` = the org; state in `chrome.storage.session`; tabs opened from it inherit it; `WhoAmI` before and after the reload; favorites `dynaboost.impFavorites` (3) and recent `dynaboost.impRecent` (5) per host; blue 3 px frame + bottom label |
 | Open workflow | action | classic workflow | Steps and XAML views; PATCH only a draft, unmanaged definition row; the original downloaded first; conflict check |
 | Edit journey | action | real-time journey | Draft only (`EDITABLE_STATUS`); ETag; backups `dynaboost.journeyBackups` (10) |
-| Copy work item | action | ADO work item | REST API; Markdown with content only; images as numbered placeholders + downloads, or inline with "Copy with images" |
+| Copy work item | action | ADO work item | REST API; Markdown with content only; images as numbered placeholders, "Download images" saves them (one ZIP for several); the tile pulses while it reads, the answer folds down under the list like Say thanks; with images nothing is copied before a button is clicked (6 s); only a failure goes to the bottom |
 | Expand items | toggle | ADO taskboard and backlogs | Items you opened yourself remembered per sprint (30 sprints); backlogs through "Expand one level" |
 | Expand wiki tree | toggle | ADO wiki | Paced (500 ms), rows keyed by `aria-labelledby`; closes only what it opened |
 
@@ -109,7 +110,7 @@ tools/                   qr-path.py, theme-vars.py + theme-dark.json
   DynaBoost.register({
     id: 'my-feature',          // storage key - never change it after a release
     name: 'My feature',        // tile label, two short words at most
-    group: 'Columns',          // section heading in the panel
+    group: 'Tables and columns', // section heading in the panel
     hint: 'What it does',      // tooltip
     icon: '<svg viewBox="0 0 24 24">...</svg>',
     hosts: ['make.powerapps.com'],                     // which sites
@@ -134,12 +135,28 @@ tools/                   qr-path.py, theme-vars.py + theme-dark.json
 4. Reload the extension in `chrome://extensions`.
 
 `onDisable` has to undo everything `onEnable` did - DOM, observers, timers.
+It also runs when DynaBoost is updated while the page is open: the copy
+running there is cut off from the extension and steps aside for the new one,
+which the background puts into the open tabs. A `chrome.*` call a feature makes
+outside `onRun` / `onEnable` (a timer, a click handler) checks
+`DynaBoost.alive()` first, and a feature file that uses `chrome.*` at all
+starts with `if (DynaBoost.off) return;` - a copy put in while DynaBoost was
+being reloaded has no `chrome.*` and stays quiet. A message to the user goes through
+`DynaBoost.toast()`, or into `DynaBoost.toastLayer()` for one with buttons -
+both follow the light or dark mode. An action whose answer has buttons sets
+`panelResult: true`: the panel stays open, `ui.busy(true)` makes its tile pulse
+while it works, and `ui.card({ title, sub, actions })` folds the answer down
+under the list the way Say thanks does (with Say thanks open too, it sits above
+it) - it goes by itself (`dismissIn`, `done`) and the panel stays open. What
+went wrong goes to the bottom with `DynaBoost.toast()`. Between the header and
+the footer the panel scrolls as one area, so however much is open, both stay
+in view.
 Tabs a feature opens get the shared header from `DynaBoost.tabCss` (append it
 to the tab's `<style>`) and call `DynaBoost.themeTab(tab)` once the document is
 written.
 
 Tile names say what happens, from the user's side - "Export table", "Open
-column details" - not what the mechanism is called.
+advanced options" - not what the mechanism is called.
 
 ### Two colours
 

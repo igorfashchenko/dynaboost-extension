@@ -5,6 +5,7 @@
  * chrome.storage.local. On Azure DevOps a shortcut opens in a new tab.
  */
 (function () {
+  if (DynaBoost.off) return;
   const STORE_KEY = 'dynaboost.solutionPins';
   const FOLD_KEY = 'dynaboost.solutionPinsFolded';
   const MAX = 6;

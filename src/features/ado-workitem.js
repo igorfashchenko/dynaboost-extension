@@ -5,9 +5,8 @@
  * comments. Tracking fields (state, dates, area, iteration, links) are left
  * out.
  *
- * Inline images become numbered placeholders (image-1.png ...) and the toast
- * offers the files under those names; "Copy with images" inlines them as data
- * URIs.
+ * Images never go into the text: each becomes a numbered placeholder
+ * (image-1.png ...) and "Download images" saves the files under those names.
  */
 (function () {
   const ICON =
@@ -132,12 +131,17 @@
   }
 
   async function fetchItem(id) {
-    return api(base() + '/_apis/wit/workitems/' + id + '?api-version=7.0');
+    // 7.1 also says which fields are written in Markdown; older servers stop at 7.0.
+    try {
+      return await api(base() + '/_apis/wit/workitems/' + id + '?api-version=7.1');
+    } catch (e) {
+      return api(base() + '/_apis/wit/workitems/' + id + '?api-version=7.0');
+    }
   }
 
   async function fetchComments(project, id) {
     const p = encodeURIComponent(project || '');
-    const versions = ['7.0-preview.3', '6.0-preview.3', '5.1-preview.3'];
+    const versions = ['7.1-preview.4', '7.0-preview.3', '6.0-preview.3', '5.1-preview.3'];
     for (const v of versions) {
       try {
         const data = await api(
@@ -168,18 +172,24 @@
   }
 
   function fileName(url, index) {
-    let name = '';
-    try {
-      name = new URL(url).searchParams.get('fileName') || '';
-    } catch (e) {
-      name = '';
+    let ext = '';
+    const data = url.match(/^data:image\/([\w.+-]+)/i);
+    if (data) {
+      ext = '.' + data[1].toLowerCase().replace('jpeg', 'jpg').replace('svg+xml', 'svg');
+    } else {
+      try {
+        ext = ((new URL(url).searchParams.get('fileName') || '').match(/\.\w+$/) || [''])[0].toLowerCase();
+      } catch (e) {
+        ext = '';
+      }
     }
-    const ext = (name.match(/\.(png|jpe?g|gif|bmp|webp|svg)$/i) || ['.png'])[0].toLowerCase();
+    if (!/^\.(png|jpe?g|gif|bmp|webp|svg)$/.test(ext)) ext = '.png';
     return 'image-' + index + ext;
   }
 
-  function image(node, ctx) {
-    const src = node.getAttribute('src') || '';
+  // An image as a numbered placeholder; pasted images (data: URIs) too, so no
+  // base64 ends up in the text.
+  function imageRef(src, alt, ctx) {
     if (!src) return '';
     let abs;
     try {
@@ -187,16 +197,19 @@
     } catch (e) {
       return '';
     }
-    if (/^data:/i.test(abs)) return '![inline image](' + abs + ')';
-
     let rec = ctx.images.filter((i) => i.url === abs)[0];
     if (!rec) {
       const index = ctx.images.length + 1;
-      rec = { url: abs, index: index, name: fileName(abs, index), alt: node.getAttribute('alt') || '' };
+      // The editor names every pasted picture "image" or "image.png".
+      const text = String(alt || '').replace(/[[\]]/g, '').trim();
+      rec = { url: abs, index: index, name: fileName(abs, index), alt: /^image(\.\w+)?$/i.test(text) ? '' : text };
       ctx.images.push(rec);
     }
-    const label = 'Image ' + rec.index + (rec.alt ? ' - ' + rec.alt : '');
-    return '![' + label + '](@@IMG' + rec.index + '@@)';
+    return '![Image ' + rec.index + (rec.alt ? ' - ' + rec.alt : '') + '](@@IMG' + rec.index + '@@)';
+  }
+
+  function image(node, ctx) {
+    return imageRef(node.getAttribute('src') || '', node.getAttribute('alt'), ctx);
   }
 
   function inline(node, ctx) {
@@ -214,7 +227,9 @@
       if (mention || (n.classList && n.classList.contains('mention'))) {
         const raw = n.textContent.replace(/\s+/g, ' ').trim();
         const guid = (mention.match(/[0-9a-f]{8}-[0-9a-f-]{27}/i) || [])[0];
-        return void (out += '@' + pseudonym(guid || raw.replace(/^@/, '')));
+        const key = guid || raw.replace(/^@/, '');
+        known(raw, key);
+        return void (out += '@' + pseudonym(key));
       }
 
       if (tag === 'br') return void (out += '  \n');
@@ -334,6 +349,53 @@
       .trim();
   }
 
+  // ---------- Markdown fields and comments ----------
+
+  const MENTION_ID = /@<([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})>/gi;
+  const MD_IMAGE = /!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g;
+  const HTML_IMAGE = /<img\b[^>]*>/gi;
+
+  // Written with the Markdown editor: the format when the API names it, else
+  // text with no HTML in it.
+  function isMarkdown(value, format) {
+    if (format) return /markdown/i.test(String(format));
+    return !HTML_RE.test(value) && !/&(amp|lt|gt|quot|nbsp|#\d+);/.test(value);
+  }
+
+  // Markdown stays as written; mentions (@<id>), images and heading levels are
+  // brought in line with the HTML fields.
+  function markdownText(text, ctx) {
+    let fence = false;
+    return String(text)
+      .replace(/\r\n?/g, '\n')
+      .split('\n')
+      .map((line) => {
+        if (/^\s*(```|~~~)/.test(line)) {
+          fence = !fence;
+          return line;
+        }
+        if (fence) return line;
+        return line
+          .replace(/^(#{1,6})(?=\s)/, (h) => '#'.repeat(Math.min(6, h.length + ctx.hShift)))
+          .replace(MD_IMAGE, (m, alt, src) => imageRef(src, alt, ctx))
+          .replace(HTML_IMAGE, (tag) => {
+            const attr = (name) => (tag.match(new RegExp(name + '\\s*=\\s*["\']([^"\']*)["\']', 'i')) || [])[1] || '';
+            return imageRef(attr('src'), attr('alt'), ctx);
+          })
+          .replace(MENTION_ID, (m, id) => '@' + pseudonym(id));
+      })
+      .join('\n')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function toMarkdown(value, format, ctx) {
+    if (!value) return '';
+    const text = String(value);
+    return isMarkdown(text, format) ? markdownText(text, ctx) : htmlToMarkdown(text, ctx);
+  }
+
   // ---------- document ----------
 
   // ---------- names ----------
@@ -343,34 +405,102 @@
    * the thread still reads as a conversation. The mapping lives for one copy.
    * The identity guid is only the grouping key and never reaches the
    * clipboard; times of day are dropped, dates stay. There is no switch. */
-  const anon = { seq: 0, map: new Map() };
+  // people: display names met on the way, swept from the plain text at the
+  // end; alias: a person's mail address -> their key.
+  const anon = { seq: 0, map: new Map(), people: [], alias: new Map() };
 
   function anonReset() {
     anon.seq = 0;
     anon.map = new Map();
+    anon.people = [];
+    anon.alias = new Map();
   }
 
-  function pseudonym(key) {
+  const keyOf = (key) => {
     const k = String(key || 'unknown').trim().toLowerCase();
+    return anon.alias.get(k) || k;
+  };
+
+  function pseudonym(key) {
+    const k = keyOf(key);
     if (!anon.map.has(k)) anon.map.set(k, 'User ' + ++anon.seq);
     return anon.map.get(k);
   }
 
-  function person(value) {
-    if (!value) return '';
+  function known(name, key) {
+    const n = String(name || '').replace(/^@/, '').replace(/\s+/g, ' ').trim();
+    // "User ..." would match the labels given out here.
+    if (n.length >= 3 && n.indexOf('@') === -1 && !/^user\b/i.test(n)) anon.people.push({ name: n, key: keyOf(key) });
+  }
+
+  function identity(value) {
+    if (!value) return null;
     if (typeof value === 'string') {
       // Older APIs hand back "Display Name <mail@example.com>".
-      return pseudonym((value.match(/<([^>]+)>/) || [null, value])[1]);
+      const m = value.match(/^(.*?)\s*<([^<>]+)>\s*$/);
+      return m ? { key: m[2], name: m[1] } : { key: value, name: value };
     }
-    return pseudonym(
-      value.id || value.descriptor || value.uniqueName || value.displayName || 'unknown'
-    );
+    const key = value.id || value.descriptor || value.uniqueName || value.displayName || 'unknown';
+    if (/@/.test(value.uniqueName || '') && value.uniqueName !== key) anon.alias.set(value.uniqueName.toLowerCase(), keyOf(key));
+    return { key: key, name: value.displayName };
+  }
+
+  function person(value) {
+    const who = identity(value);
+    if (!who) return '';
+    known(who.name, who.key);
+    return pseudonym(who.key);
+  }
+
+  // The people in the item's own fields (created by, assigned to ...): their
+  // names can turn up in the text without a mention.
+  function knowFields(fields) {
+    Object.keys(fields).forEach((key) => {
+      const v = fields[key];
+      const who = v && typeof v === 'object' && v.displayName ? identity(v) : typeof v === 'string' && /^[^<>@]+<[^<>\s]+@[^<>\s]+>$/.test(v) ? identity(v) : null;
+      if (who) known(who.name, who.key);
+    });
   }
 
   // Mail addresses can sit in plain text anywhere - comment bodies, tables,
   // pasted signatures - so they are swept up after the Markdown is built.
   function scrubMail(text) {
     return text.replace(/[\w.+-]+@[\w-]+\.[\w.-]{2,}/g, (m) => pseudonym(m));
+  }
+
+  /* Names written as plain text ("as agreed with Jane Doe", a signature) are
+   * swept too, for every person met above: the full name in any case, and
+   * the first or last name alone, capitalised, when only one person has it. */
+  function scrubNames(text) {
+    const full = new Map();
+    const parts = new Map();
+    anon.people.forEach((p) => {
+      full.set(p.name.toLowerCase(), p.key);
+      const core = p.name.replace(/\s*[([].*$/, '').trim();
+      if (core.length >= 3) full.set(core.toLowerCase(), p.key);
+      const words = core.split(/[\s,]+/).filter(Boolean);
+      // Only what reads as a person's name - not "Build Service (org)".
+      if (words.length < 2 || words.length > 3 || !words.every((w) => /^\p{Lu}[\p{L}'\u2019-]+$/u.test(w))) return;
+      words.forEach((w) => {
+        if (w.length < 3) return;
+        parts.set(w, parts.has(w) && parts.get(w) !== p.key ? null : p.key);
+      });
+    });
+    const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const swap = (map, flags) => {
+      Array.from(map.keys())
+        .sort((a, b) => b.length - a.length)
+        .forEach((name) => {
+          const key = map.get(name);
+          if (key == null) return;
+          const re = new RegExp('(?<![\\p{L}\\p{N}_])' + esc(name) + '(?![\\p{L}\\p{N}_])', flags);
+          text = text.replace(re, () => pseudonym(key));
+        });
+    };
+    swap(full, 'giu');
+    swap(parts, 'gu');
+    // An id-only mention left in text that came as HTML.
+    return text.replace(MENTION_ID, (m, id) => '@' + pseudonym(id));
   }
 
   function date(value) {
@@ -398,6 +528,8 @@
     const stats = { sections: 0, comments: 0 };
 
     const type = f['System.WorkItemType'];
+    const format = (key) => (item.multilineFieldsFormat || {})[key] || '';
+    knowFields(f);
     // As the form's own header writes it: "FEATURE 1234".
     lines.push('# ' + label(type, id) + ' - ' + (f['System.Title'] || 'Work item'));
     lines.push('');
@@ -405,7 +537,7 @@
     const used = {};
     SECTIONS.forEach(([key, label]) => {
       used[key] = true;
-      const md = htmlToMarkdown(f[key], ctx);
+      const md = toMarkdown(f[key], format(key), ctx);
       if (!md) return;
       stats.sections++;
       lines.push('## ' + label, '', md, '');
@@ -415,8 +547,8 @@
     Object.keys(f).forEach((key) => {
       if (used[key]) return;
       const v = f[key];
-      if (typeof v !== 'string' || !HTML_RE.test(v)) return;
-      const md = htmlToMarkdown(v, ctx);
+      if (typeof v !== 'string' || !(HTML_RE.test(v) || /markdown/i.test(format(key)))) return;
+      const md = toMarkdown(v, format(key), ctx);
       if (!md) return;
       stats.sections++;
       lines.push('## ' + friendly(key), '', md, '');
@@ -431,14 +563,14 @@
           stats.comments++;
           lines.push('### ' + (i + 1) + '. ' + person(c.createdBy) + ', ' + date(c.createdDate));
           lines.push('');
-          lines.push(htmlToMarkdown(c.text, ctx) || '_(empty)_');
+          lines.push(toMarkdown(c.text, c.format, ctx) || '_(empty)_');
           lines.push('');
         });
     }
 
     if (ctx.images.length) {
       lines.push('## Images', '');
-      lines.push('Image files are not part of this text. Download them from DynaBoost and attach them; the file names match the placeholders above.', '');
+      lines.push('Image files are not part of this text. Save them with "Download images" in DynaBoost and attach them; the file names match the placeholders above.', '');
       ctx.images.forEach((img) => {
         lines.push('- ' + img.name + (img.alt ? ' - ' + img.alt : ''));
       });
@@ -453,18 +585,10 @@
   async function loadImage(img) {
     if (img.blob) return img;
     const res = await fetch(img.url, { credentials: 'include' });
-    if (!res.ok) throw new Error('Could not download ' + img.name);
+    // A sign-in page instead of the picture is not an image either.
+    if (!res.ok || /text\/html/i.test(res.headers.get('content-type') || '')) throw new Error('Could not download ' + img.name);
     img.blob = await res.blob();
     return img;
-  }
-
-  function toDataUrl(blob) {
-    return new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(r.result);
-      r.onerror = () => reject(new Error('read failed'));
-      r.readAsDataURL(blob);
-    });
   }
 
   function saveBlob(blob, name) {
@@ -486,18 +610,91 @@
     return out;
   }
 
-  async function withDataUrls(markdown, images) {
-    let out = markdown;
+  const CRC = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  function crc32(bytes) {
+    let c = 0xffffffff;
+    for (let i = 0; i < bytes.length; i++) c = CRC[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+
+  // A ZIP with the files stored as they are - pictures are compressed already.
+  async function zip(files) {
+    const enc = new TextEncoder();
+    const d = new Date();
+    const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+    const day = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+    const body = [];
+    const dir = [];
+    let offset = 0;
+    for (const f of files) {
+      const name = enc.encode(f.name);
+      const data = new Uint8Array(await f.blob.arrayBuffer());
+      const crc = crc32(data);
+      const local = new DataView(new ArrayBuffer(30));
+      local.setUint32(0, 0x04034b50, true);
+      local.setUint16(4, 20, true);
+      local.setUint16(6, 0x0800, true); // names in UTF-8
+      local.setUint16(10, time, true);
+      local.setUint16(12, day, true);
+      local.setUint32(14, crc, true);
+      local.setUint32(18, data.length, true);
+      local.setUint32(22, data.length, true);
+      local.setUint16(26, name.length, true);
+      body.push(local, name, data);
+      const entry = new DataView(new ArrayBuffer(46));
+      entry.setUint32(0, 0x02014b50, true);
+      entry.setUint16(4, 20, true);
+      entry.setUint16(6, 20, true);
+      entry.setUint16(8, 0x0800, true);
+      entry.setUint16(12, time, true);
+      entry.setUint16(14, day, true);
+      entry.setUint32(16, crc, true);
+      entry.setUint32(20, data.length, true);
+      entry.setUint32(24, data.length, true);
+      entry.setUint16(28, name.length, true);
+      entry.setUint32(42, offset, true);
+      dir.push(entry, name);
+      offset += 30 + name.length + data.length;
+    }
+    const size = dir.reduce((n, part) => n + part.byteLength, 0);
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true);
+    end.setUint16(8, files.length, true);
+    end.setUint16(10, files.length, true);
+    end.setUint32(12, size, true);
+    end.setUint32(16, offset, true);
+    return new Blob(body.concat(dir, [end]), { type: 'application/zip' });
+  }
+
+  /* Chrome lets a page start one download by itself and holds the next ones
+   * behind a "download multiple files" prompt, so one click saves one file:
+   * the image itself, or a ZIP when there are more. */
+  async function saveImages(images, base) {
+    const ready = [];
     for (const img of images) {
       try {
-        await loadImage(img);
-        const data = await toDataUrl(img.blob);
-        out = out.split('@@IMG' + img.index + '@@').join(data);
+        ready.push(await loadImage(img));
       } catch (e) {
-        out = out.split('@@IMG' + img.index + '@@').join(img.name);
+        /* counted by the caller */
       }
     }
-    return out;
+    if (!ready.length) return { saved: 0, file: '' };
+    if (ready.length === 1) {
+      saveBlob(ready[0].blob, ready[0].name);
+      return { saved: 1, file: ready[0].name };
+    }
+    const file = base.replace(/[^\w-]+/g, '-') + '-images.zip';
+    saveBlob(await zip(ready), file);
+    return { saved: ready.length, file: file };
   }
 
   // ---------- clipboard ----------
@@ -526,18 +723,8 @@
 
   // ---------- toast ----------
 
-  let toastRoot = null;
-
-  function toastLayer() {
-    if (toastRoot && document.body.contains(toastRoot)) return toastRoot;
-    toastRoot = document.createElement('div');
-    toastRoot.id = 'dynaboost-toast';
-    document.body.appendChild(toastRoot);
-    return toastRoot;
-  }
-
   function toast(options) {
-    const layer = toastLayer();
+    const layer = DynaBoost.toastLayer();
     const card = document.createElement('div');
     card.className = 'db-toast' + (options.tone === 'error' ? ' db-toast-error' : '');
 
@@ -546,7 +733,7 @@
 
     const mark = document.createElement('span');
     mark.className = 'db-toast-mark';
-    mark.textContent = options.tone === 'error' ? '!' : options.tone === 'busy' ? '\u2026' : '\u2713';
+    mark.textContent = options.tone === 'error' ? '!' : options.tone === 'busy' ? '\u2026' : options.tone === 'info' ? 'i' : '\u2713';
 
     const text = document.createElement('div');
     text.className = 'db-toast-text';
@@ -563,7 +750,7 @@
     close.className = 'db-toast-close';
     close.setAttribute('aria-label', 'Close');
     close.textContent = '\u2715';
-    close.addEventListener('click', () => card.remove());
+    close.addEventListener('click', () => api.dismissIn(0));
 
     row.append(mark, text, close);
     card.appendChild(row);
@@ -573,14 +760,30 @@
     card.appendChild(actions);
     layer.appendChild(card);
 
+    // The card waits while the pointer is on it, except when it is closing
+    // after a button has done its job.
     let timer = null;
+    let due = 0;
+    let paused = 0;
+    let closing = false;
+    card.addEventListener('mouseenter', () => {
+      if (!timer || closing) return;
+      clearTimeout(timer);
+      timer = null;
+      paused = Math.max(due - Date.now(), 2500);
+    });
+    card.addEventListener('mouseleave', () => {
+      if (paused && !closing) api.dismissIn(paused);
+      paused = 0;
+    });
+
     const api = {
       set(opts) {
         if (opts.title != null) title.textContent = opts.title;
         if (opts.sub != null) sub.textContent = opts.sub;
         if (opts.tone) {
           card.classList.toggle('db-toast-error', opts.tone === 'error');
-          mark.textContent = opts.tone === 'error' ? '!' : opts.tone === 'busy' ? '\u2026' : '\u2713';
+          mark.textContent = opts.tone === 'error' ? '!' : opts.tone === 'busy' ? '\u2026' : opts.tone === 'info' ? 'i' : '\u2713';
         }
         if (opts.actions) {
           actions.textContent = '';
@@ -588,12 +791,14 @@
             const b = document.createElement('button');
             b.type = 'button';
             b.textContent = a.label;
-            b.addEventListener('click', () => a.onClick(api, b));
+            b.addEventListener('click', () => a.onClick(api, b, actions));
             actions.appendChild(b);
           });
         }
         if (opts.hold) {
           clearTimeout(timer);
+          timer = null;
+          paused = 0;
         } else if (opts.timeout) {
           api.dismissIn(opts.timeout);
         }
@@ -601,11 +806,21 @@
       },
       dismissIn(ms) {
         clearTimeout(timer);
+        due = Date.now() + ms;
         timer = setTimeout(() => {
           card.classList.add('db-toast-out');
           setTimeout(() => card.remove(), 200);
         }, ms);
         return api;
+      },
+      // A button did its job: it says so, and the card goes shortly after.
+      done(button, label, ms) {
+        card.querySelectorAll('.db-toast-actions button').forEach((b) => (b.disabled = true));
+        button.textContent = '\u2713 ' + label;
+        button.classList.add('db-toast-done');
+        closing = true;
+        paused = 0;
+        return api.dismissIn(ms);
       },
       close() {
         card.remove();
@@ -620,7 +835,12 @@
 
   let running = false;
 
-  async function run() {
+  /* From the panel (ui): its tile pulses while the item is read, then one
+   * answer folds down under the list. Without images the text is
+   * copied at once; with images nothing is copied until a button says how -
+   * the text without them, or the image files. What went wrong goes to the
+   * bottom of the page; the panel stays open. */
+  async function run(ui) {
     if (running) return;
     const id = workItemId();
     if (!id) {
@@ -634,7 +854,10 @@
     }
 
     running = true;
-    const t = toast({ tone: 'busy', title: 'Reading #' + id, sub: 'Fetching fields and comments', hold: true });
+    if (ui) ui.busy(true);
+    // Outside the panel there is no tile to pulse: a toast says it reads.
+    const reading = ui ? null : toast({ tone: 'busy', title: 'Reading #' + id, sub: 'Fetching fields and comments', hold: true });
+    const answer = (opts) => (ui ? ui.card(opts) : reading.set(opts));
 
     try {
       const item = await fetchItem(id);
@@ -645,92 +868,78 @@
       anonReset();
       const built = build(item, comments, ctx);
       const name = label((item.fields || {})['System.WorkItemType'], id);
-      built.markdown = scrubMail(built.markdown);
+      built.markdown = scrubNames(scrubMail(built.markdown));
       const plain = withFileNames(built.markdown, ctx.images);
-      const ok = await copy(plain);
+      const total = ctx.images.length;
 
       const bits = [];
       bits.push(built.stats.sections + (built.stats.sections === 1 ? ' section' : ' sections'));
       bits.push(built.stats.comments + (built.stats.comments === 1 ? ' comment' : ' comments'));
-      if (ctx.images.length) bits.push(ctx.images.length + (ctx.images.length === 1 ? ' image' : ' images'));
       bits.push('names removed');
 
-      if (!ok) {
-        t.set({
-          tone: 'error',
-          title: 'Clipboard blocked',
-          sub: 'Chrome refused the copy. Try again with the tab focused.',
-          hold: true,
-          actions: [
-            {
-              label: 'Copy again',
-              onClick: async (self) => {
-                const second = await copy(plain);
-                self.set({
-                  tone: second ? 'ok' : 'error',
-                  title: second ? 'Copied ' + name : 'Still blocked',
-                  sub: second ? bits.join(', ') : 'Click inside the page first, then retry.'
-                });
-                if (second) self.dismissIn(4000);
-              }
-            }
-          ]
-        });
+      const copyText = {
+        label: 'Copy without images',
+        onClick: async (self, button) => {
+          if (await copy(plain)) {
+            self.set({ tone: 'ok', title: 'Copied ' + name, sub: total ? 'The text is on the clipboard, images as placeholders' : bits.join(', ') }).done(button, 'Copied', 1000);
+          } else {
+            self.set({ tone: 'error', sub: 'Clipboard blocked. Click inside the page first, then retry.', hold: true }).dismissIn(9000);
+          }
+        }
+      };
+
+      if (!total) {
+        if (await copy(plain)) {
+          // Nothing to click: it only says what was copied.
+          answer({ tone: 'ok', title: 'Copied ' + name, sub: bits.join(', '), hold: true }).dismissIn(2000);
+        } else {
+          answer({
+            tone: 'error',
+            title: 'Clipboard blocked',
+            sub: 'Chrome refused the copy. Try again with the tab focused.',
+            hold: true,
+            actions: [Object.assign({}, copyText, { label: 'Copy again' })]
+          });
+        }
         return;
       }
 
-      const actions = [];
-      if (ctx.images.length) {
-        actions.push({
-          label: 'Download images',
-          onClick: async (self, button) => {
-            button.disabled = true;
-            let done = 0;
-            for (const img of ctx.images) {
-              try {
-                await loadImage(img);
-                saveBlob(img.blob, img.name);
-                done++;
-              } catch (e) {
-                /* keep going */
-              }
-            }
-            self.set({ sub: done + ' of ' + ctx.images.length + ' images saved' });
-            button.disabled = false;
-          }
-        });
-        actions.push({
-          label: 'Copy with images',
-          onClick: async (self, button) => {
-            button.disabled = true;
-            self.set({ sub: 'Embedding images...' });
-            const fat = await withDataUrls(built.markdown, ctx.images);
-            const done = await copy(fat);
-            self.set({
-              tone: done ? 'ok' : 'error',
-              sub: done
-                ? 'Copied with images inline, ' + Math.round(fat.length / 1024) + ' KB'
-                : 'Clipboard refused it, probably too large.'
-            });
-            button.disabled = false;
-          }
-        });
-      }
-
-      t.set({
-        tone: 'ok',
-        title: 'Copied ' + name,
+      // Images: nothing is copied yet - the buttons say how.
+      answer({
+        tone: 'info',
+        title: name + ' has ' + total + (total === 1 ? ' image' : ' images'),
         sub: bits.join(', '),
-        actions: actions,
-        hold: !!actions.length
-      });
-      if (!actions.length) t.dismissIn(4000);
-      else t.dismissIn(15000);
+        hold: true,
+        actions: [
+          copyText,
+          {
+            label: total === 1 ? 'Download image' : 'Download ' + total + ' images',
+            onClick: async (self, button) => {
+              const label = button.textContent;
+              button.disabled = true;
+              button.textContent = 'Saving…';
+              self.set({ tone: 'busy', sub: total === 1 ? 'Reading the image...' : 'Reading ' + total + ' images...', hold: true });
+              const r = await saveImages(ctx.images, name);
+              const missed = total - r.saved;
+              if (!r.saved) {
+                button.disabled = false;
+                button.textContent = label;
+                self.set({ tone: 'error', sub: 'Could not read the images. Reload the page and try again.' }).dismissIn(9000);
+                return;
+              }
+              self.set({
+                tone: 'ok',
+                sub: (r.saved === 1 ? 'Saved ' : r.saved + ' images saved in ') + r.file + (missed ? ' - ' + missed + ' could not be read' : '')
+              }).done(button, 'Saved', missed ? 4000 : 1500);
+            }
+          }
+        ]
+      }).dismissIn(6000); // the question waits 6 s (longer while the pointer is on it)
     } catch (e) {
-      t.set({ tone: 'error', title: 'Could not read #' + id, sub: e.message, hold: true });
-      t.dismissIn(9000);
+      (reading || toast({ tone: 'error' })).set({ tone: 'error', title: 'Could not read #' + id, sub: e.message, hold: true }).dismissIn(9000);
     } finally {
       running = false;
+      if (ui) ui.busy(false);
     }
   }
 
@@ -741,6 +950,7 @@
     hosts: ['dev.azure.com', 'visualstudio.com'],
     when: () => !!workItemId() || /\/_(workitems|boards|backlogs|queries|sprints)\b/i.test(location.pathname),
     type: 'action',
+    panelResult: true,
     hint: 'Copies the open work item as Markdown, content only: the title, every description section and the whole comment thread. People are always replaced by User 1, User 2 ...',
     icon: ICON,
     onRun: run

@@ -5,6 +5,7 @@
  * pointed at the designer once known - after an await it would be a pop-up.
  */
 (function () {
+  if (DynaBoost.off) return;
   const ICON =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
     '<rect x="3" y="3" width="14" height="18" rx="2" stroke="#3D8BFF" stroke-width="1.6"/>' +

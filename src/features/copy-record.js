@@ -8,6 +8,7 @@
  * dropped if not picked up within a minute. Nothing is saved until you save.
  */
 (function () {
+  if (DynaBoost.off) return;
   const ICON =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
     '<rect x="8" y="8" width="12" height="13" rx="2" stroke="#3D8BFF" stroke-width="1.6"/>' +

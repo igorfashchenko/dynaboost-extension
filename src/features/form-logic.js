@@ -16,6 +16,7 @@
  * managed ones cannot be edited.
  */
 (function () {
+  if (DynaBoost.off) return;
   const API = '/api/data/v9.2/';
   const MAKER = 'https://make.powerapps.com';
   const FLOW_PORTAL = 'https://make.powerautomate.com';
@@ -1464,12 +1465,7 @@
   const norm = (t) => String(t || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
   function makerToast() {
-    let layer = document.getElementById('dynaboost-toast');
-    if (!layer) {
-      layer = document.createElement('div');
-      layer.id = 'dynaboost-toast';
-      document.body.appendChild(layer);
-    }
+    const layer = DynaBoost.toastLayer();
     const card = document.createElement('div');
     card.className = 'db-toast';
     card.innerHTML =

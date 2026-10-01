@@ -54,7 +54,8 @@ HIGHLIGHTS
 POWER APPS
 • Export table – any grid of the maker portal to Markdown or CSV.
 • Open on All – the Tables and Apps pages open on "All" instead of "Recommended" / "My apps".
-• Open column details – a column's advanced options always open.
+• Open advanced options – the advanced options of a new or edited table or column always open.
+• Column defaults – a new column starts without form fill assistance.
 • Open in classic, Advanced Find, System jobs – one click from where you are.
 • My solutions – up to six shortcuts to the solutions you work in, in any environment.
 • Expand tree – every branch of the Studio tree view open, folded back when you are done.
@@ -128,7 +129,7 @@ No.
 
 **Host permission justification** (one field):
 
-> DynaBoost runs only on the Microsoft sites its tools are made for: make.powerapps.com (table export, column details, classic explorer link, canvas screen code editor), make.powerautomate.com (edit flow, export run, expand all steps), *.dynamics.com (the user's own Dynamics 365 environments: form, workflow and journey tools, Impersonate), dev.azure.com and *.visualstudio.com (Azure DevOps: copy a work item, expand taskboards and the wiki tree; the Visual Studio Code, Marketplace and sign-in sites under visualstudio.com are excluded), and *.gateway.prod.island.powerapps.com, where Power Apps Studio runs in a frame and the screen code editor reads the open "View code" dialog. The tools act only when the user uses them; nothing is sent to any other site.
+> DynaBoost runs only on the Microsoft sites its tools are made for: make.powerapps.com (table export, table and column advanced options, classic explorer link, canvas screen code editor), make.powerautomate.com (edit flow, export run, expand all steps), *.dynamics.com (the user's own Dynamics 365 environments: form, workflow and journey tools, Impersonate), dev.azure.com and *.visualstudio.com (Azure DevOps: copy a work item, expand taskboards and the wiki tree; the Visual Studio Code, Marketplace and sign-in sites under visualstudio.com are excluded), and *.gateway.prod.island.powerapps.com, where Power Apps Studio runs in a frame and the screen code editor reads the open "View code" dialog. The tools act only when the user uses them; nothing is sent to any other site.
 
 **Are you using remote code?** No. All JavaScript is in the package.
 

@@ -15,6 +15,7 @@
  * dialog is open, and a longer word is filtered locally when it can be.
  */
 (function () {
+  if (DynaBoost.off) return;
   const ICON =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
     '<circle cx="15.6" cy="7.4" r="2.7" stroke="#E3B04B" stroke-width="1.6"/>' +

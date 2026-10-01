@@ -8,6 +8,7 @@
  * columns are known only to the page's Xrm.
  */
 (function () {
+  if (DynaBoost.off) return;
   const ICON =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
     '<path d="M4 6h10M4 10h6" stroke="#3D8BFF" stroke-width="1.6" stroke-linecap="round"/>' +

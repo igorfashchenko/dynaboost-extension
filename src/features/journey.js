@@ -10,6 +10,7 @@
  * that parses as JSON - the schema differs between versions.
  */
 (function () {
+  if (DynaBoost.off) return;
   const ICON =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
     '<circle cx="12" cy="4.5" r="2" stroke="#3D8BFF" stroke-width="1.6"/>' +

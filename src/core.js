@@ -12,13 +12,104 @@
  * is listed in manifest.json under content_scripts.js (background.js reads
  * the same list). */
 (function () {
-  if (window.DynaBoost) return;
+  /* A copy put in while DynaBoost itself was being reloaded runs with no
+   * chrome.* at all. It stays out of the page and quiet - the features see
+   * DynaBoost.off - and the new DynaBoost puts in a copy of its own. */
+  let bound = false;
+  try {
+    bound = !!(chrome.runtime && chrome.runtime.id);
+  } catch (e) {
+    bound = false;
+  }
+  if (!bound) {
+    if (!window.DynaBoost) {
+      const nop = () => {};
+      window.DynaBoost = {
+        off: true,
+        retired: true,
+        register: nop,
+        addSection: nop,
+        refresh: nop,
+        isOn: () => false,
+        toggle: nop,
+        openPanel: nop,
+        closePanel: nop,
+        isDark: () => false,
+        toast: nop,
+        toastLayer: () => document.createElement('div'),
+        togglePanel: nop,
+        alive: () => false
+      };
+    }
+    return;
+  }
+
+  // A copy left running from before an update steps aside (see retire()).
+  document.dispatchEvent(new Event('dynaboost-start'));
+  if (window.DynaBoost && !window.DynaBoost.retired) return;
 
   const STORAGE_KEY = 'dynaboost.features';
   const SHOW_ALL_KEY = 'dynaboost.showAll';
   const THEME_KEY = 'dynaboost.theme'; // { mode, browser }: the header button's choice, and the browser's mode it was made in
   const HELP_TILES_KEY = 'dynaboost.helpTiles'; // the tiles' names and icons, for the help page
   const ICON_URL = chrome.runtime.getURL('icons/icon48.png');
+
+  // ---------- after an update ----------
+
+  /* An update or reload of DynaBoost cuts the copy already running in an
+   * open tab off from the extension: every chrome.* call there throws
+   * "Extension context invalidated". That copy retires - toggles off, panel
+   * gone, no more calls - and the new copy takes the page over. */
+  const GONE = 'DynaBoost was updated. Reload the page.';
+  const timers = [];
+  let retired = false;
+
+  function alive() {
+    try {
+      return !!(chrome.runtime && chrome.runtime.id);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function retire() {
+    if (retired) return;
+    retired = true;
+    timers.forEach(clearInterval);
+    clearInterval(watchTimer);
+    for (const f of features) {
+      // Only what runs on this page.
+      if (f.type !== 'toggle' || !f.onDisable || !isOn(f.id) || !onThisPage(f)) continue;
+      try {
+        f.onDisable();
+      } catch (e) {
+        /* its own chrome.* calls fail now */
+      }
+    }
+    if (root) root.remove();
+    root = null;
+    refs = null;
+    // The old features still call it; a new copy may take the name over.
+    api.retired = true;
+  }
+
+  // A chrome.* call; once cut off, retires instead of throwing.
+  function ext(call, fallback) {
+    if (retired || !alive()) {
+      retire();
+      return fallback;
+    }
+    try {
+      return call();
+    } catch (e) {
+      if (alive()) throw e;
+      retire();
+      return fallback;
+    }
+  }
+
+  const send = (msg) => ext(() => chrome.runtime.sendMessage(msg), null) || Promise.reject(new Error(GONE));
+  const store = (items) => ext(() => chrome.storage.local.set(items));
 
   /* Say thanks: the heart in the footer. A coin whose address is empty is
    * listed as coming soon. */
@@ -92,6 +183,10 @@
    * @param {Function} [feature.onEnable]   toggles only
    * @param {Function} [feature.onDisable]  toggles only
    * @param {Function} [feature.onRun]      actions only
+   * @param {boolean}  [feature.panelResult] actions only: the panel stays open
+   *                                        and onRun(ui) answers in it, in a
+   *                                        card that folds down under the
+   *                                        list - see panelUi()
    * @param {boolean} [feature.inFrames]    also works in a frame and is offered
    *                                   to the panel of the page around it
    * @param {Function} [feature.frameRun]   actions in a frame: run from the page
@@ -177,20 +272,21 @@
     state[id] = !isOn(id);
     applyFeature(feature);
     queueRender();
-    chrome.storage.local.set({ [STORAGE_KEY]: state });
+    store({ [STORAGE_KEY]: state });
   }
 
   function run(feature) {
     const here = shownHere(feature);
     if (!here && !framed.has(feature.id)) return;
-    setPanel(false);
+    const ui = here && feature.panelResult ? panelUi(feature) : null;
+    if (!ui) setPanel(false);
     try {
       if (here) {
-        if (feature.onRun) feature.onRun();
+        if (feature.onRun) feature.onRun(ui);
       } else if (feature.frameRun) {
         feature.frameRun((op, payload) => askFrame(feature.id, op, payload));
       } else {
-        chrome.runtime.sendMessage({ type: 'DB_FRAME_RUN', id: feature.id, frameId: framed.get(feature.id) }).catch(() => {});
+        send({ type: 'DB_FRAME_RUN', id: feature.id, frameId: framed.get(feature.id) }).catch(() => {});
       }
     } catch (e) {
       console.warn('[DynaBoost] feature "' + feature.id + '" failed:', e);
@@ -199,7 +295,7 @@
 
   function setShowAll(value) {
     showAll = !!value;
-    chrome.storage.local.set({ [SHOW_ALL_KEY]: showAll });
+    store({ [SHOW_ALL_KEY]: showAll });
     render();
   }
 
@@ -338,7 +434,7 @@
   function dropStaleTheme() {
     if (!theme || theme.browser === browserMode()) return;
     theme = null;
-    chrome.storage.local.remove(THEME_KEY);
+    ext(() => chrome.storage.local.remove(THEME_KEY));
   }
 
   function autoDark() {
@@ -371,8 +467,8 @@
   function toggleTheme() {
     const next = isDark() ? 'light' : 'dark';
     theme = (next === 'dark') === autoDark() ? null : { mode: next, browser: browserMode() };
-    if (theme) chrome.storage.local.set({ [THEME_KEY]: theme });
-    else chrome.storage.local.remove(THEME_KEY);
+    if (theme) store({ [THEME_KEY]: theme });
+    else ext(() => chrome.storage.local.remove(THEME_KEY));
     applyTheme();
   }
 
@@ -398,15 +494,17 @@
     const here = features.filter(usable).map((f) => f.id);
     if (refs && refs.top.childElementCount) here.push('solution-pins');
     try {
-      await chrome.storage.local.set({ [HELP_TILES_KEY]: features.map((f) => ({ id: f.id, name: f.name, icon: f.icon || '' })) });
+      await store({ [HELP_TILES_KEY]: features.map((f) => ({ id: f.id, name: f.name, icon: f.icon || '' })) });
     } catch (e) {
       /* the page reads without the icons */
     }
-    chrome.runtime.sendMessage({ type: 'DB_OPEN_HELP', here: here, dark: isDark() }).catch(() => {});
+    send({ type: 'DB_OPEN_HELP', here: here, dark: isDark() }).catch(() => {});
     setPanel(false);
   }
 
   function buildShell() {
+    // One left behind by a copy from before an update.
+    document.querySelectorAll('#dynaboost-root').forEach((old) => old.remove());
     root = el('div');
     root.id = 'dynaboost-root';
 
@@ -480,15 +578,20 @@
     scope.addEventListener('click', () => setShowAll(!showAll));
     foot.append(thanks.button, scope);
 
-    panel.append(head, ctx, top, body, thanks.card, foot);
+    // Between the header and the footer one area scrolls: the sections, the
+    // tiles and the cards that fold down under them (an action's answer, Say
+    // thanks). However much is open, the header and the footer stay in view.
+    const mid = el('div', 'db-mid');
+    mid.append(top, body, thanks.card);
+    panel.append(head, ctx, mid, foot);
     root.appendChild(panel);
     document.body.appendChild(root);
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && root.classList.contains('db-open')) setPanel(false);
+      if (e.key === 'Escape' && root && root.classList.contains('db-open')) setPanel(false);
     });
 
-    return { top, body, scope, ctx, ctxKind, ctxId, ctxSub, ctxCopy, theme: themeBtn };
+    return { top, body, mid, foot, scope, ctx, ctxKind, ctxId, ctxSub, ctxCopy, theme: themeBtn };
   }
 
   const HEART_SVG =
@@ -525,6 +628,7 @@
     const setOpen = (open) => {
       panel.classList.toggle('db-thanks-open', open);
       button.setAttribute('aria-expanded', String(open));
+      if (open) reveal(card);
     };
     button.addEventListener('click', () => setOpen(!panel.classList.contains('db-thanks-open')));
 
@@ -593,6 +697,7 @@
         const open = !card.classList.contains('db-qr-open');
         card.classList.toggle('db-qr-open', open);
         qrBtn.setAttribute('aria-expanded', String(open));
+        if (open) reveal(qr);
       });
     }
 
@@ -619,6 +724,7 @@
       const open = !card.classList.contains('db-wallets-open');
       card.classList.toggle('db-wallets-open', open);
       cryptoBtn.setAttribute('aria-expanded', String(open));
+      if (open) reveal(wallets);
     });
 
     const note = el('div', 'db-thanks-note', 'Card payments are handled by Stripe — DynaBoost never sees them.');
@@ -703,7 +809,7 @@
     if (!root) return;
     if (open) {
       // A frame of this page may have changed its page meanwhile.
-      if (!inFrame) chrome.runtime.sendMessage({ type: 'DB_FRAME_PING' }).catch(() => {});
+      if (!inFrame) send({ type: 'DB_FRAME_PING' }).catch(() => {});
       applyTheme();
       updateContext();
       render();
@@ -712,26 +818,31 @@
         watchTimer = setInterval(() => {
           if (location.href === watchedHref) return;
           watchedHref = location.href;
+          // An answer was about the page before.
+          dropResult();
           updateContext();
           render();
         }, 700);
       }
-    } else if (watchTimer) {
-      clearInterval(watchTimer);
-      watchTimer = null;
+    } else {
+      dropResult();
+      if (watchTimer) {
+        clearInterval(watchTimer);
+        watchTimer = null;
+      }
     }
     root.classList.toggle('db-open', open);
   }
 
   function togglePanel() {
     ensureShell();
-    setPanel(!root.classList.contains('db-open'));
+    if (root) setPanel(!root.classList.contains('db-open'));
   }
 
   // The shell is built lazily, on the first open. Whatever registered before
   // that never got drawn, so paint the tiles as soon as it exists.
   function ensureShell() {
-    if (refs) return;
+    if (refs || retired) return;
     refs = buildShell();
     render();
   }
@@ -822,6 +933,8 @@
     const here = usable(feature);
     const tile = el('button', 'db-tile db-tile-' + feature.type + (here ? '' : ' db-tile-away'));
     tile.type = 'button';
+    tile.dataset.dbId = feature.id;
+    if (busy.has(feature.id)) tile.classList.add('db-tile-busy');
     tile.title = here
       ? feature.hint || feature.name
       : (feature.hint || feature.name) + ' — not available on this page';
@@ -840,6 +953,166 @@
       tile.addEventListener('click', () => run(feature));
     }
     return tile;
+  }
+
+  // ---------- an action's answer in the panel ----------
+
+  /* An action with panelResult keeps the panel open. onRun(ui) gets
+   * ui.busy(on) - its tile pulses while it works - and ui.card(options): a
+   * card that folds down under the list, the way Say thanks does, pushing
+   * the footer down; with Say thanks open as well, both stay, one above the
+   * other. ui.close() closes the panel.
+   * options: { tone: 'ok' | 'info' | 'busy' | 'error', title, sub,
+   * actions: [{ label, onClick(card, button) }] }. The card has set(options),
+   * dismissIn(ms) - it goes ms later, waiting while the pointer moves on it -
+   * done(button, label, ms) - the button says it is done, the card goes ms
+   * later - and close(); its ✕ closes it too. It goes with the panel, and
+   * when the address changes. */
+  let result = null; // { id, el }
+  const busy = new Set(); // tiles at work
+
+  const still = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  // A card that has just folded down is brought into view if the panel
+  // scrolls - its top first, when it is taller than what shows.
+  function reveal(node) {
+    setTimeout(() => {
+      if (!refs || !node.isConnected) return;
+      const area = refs.mid.getBoundingClientRect();
+      const r = node.getBoundingClientRect();
+      const by = Math.min(r.bottom - area.bottom, r.top - area.top);
+      if (by > 0) refs.mid.scrollBy({ top: by, behavior: still() ? 'auto' : 'smooth' });
+    }, 300);
+  }
+
+  function setBusy(id, on) {
+    if (on) busy.add(id);
+    else busy.delete(id);
+    const tile = refs && refs.body.querySelector('.db-tile[data-db-id="' + id + '"]');
+    if (tile) tile.classList.toggle('db-tile-busy', on);
+  }
+
+  // animate: fold it up; otherwise (the panel closes) it just goes.
+  function dropResult(animate) {
+    if (!result) return;
+    const box = result.el;
+    result = null;
+    if (!animate || still() || !box.isConnected) return void box.remove();
+    box.classList.remove('db-fold-open');
+    setTimeout(() => box.remove(), 260);
+  }
+
+  function panelUi(feature) {
+    return {
+      busy(on) {
+        setBusy(feature.id, !!on);
+      },
+      card(options) {
+        dropResult();
+        const inner = el('div', 'db-sheet-in');
+        const head = el('div', 'db-sheet-head');
+        const mark = el('span', 'db-sheet-mark');
+        const title = el('div', 'db-sheet-title');
+        const x = el('button', 'db-sheet-close', '✕');
+        x.type = 'button';
+        x.setAttribute('aria-label', 'Close');
+        head.append(mark, title, x);
+        const sub = el('div', 'db-sheet-sub');
+        const actions = el('div', 'db-sheet-actions');
+        inner.append(head, sub, actions);
+        const box = fold(el('div', 'db-sheet'), inner);
+        box.setAttribute('role', 'status');
+        const mine = { id: feature.id, el: box };
+
+        let timer = null;
+        let due = 0;
+        let paused = 0;
+        let closing = false;
+        const goIn = (ms) => {
+          clearTimeout(timer);
+          due = Date.now() + ms;
+          timer = setTimeout(() => {
+            if (result === mine) dropResult(true);
+          }, ms);
+        };
+        // The pointer moved onto it - not the card unfolding under a pointer
+        // that stayed where it was.
+        box.addEventListener('mousemove', (e) => {
+          if (!timer || closing || !(e.movementX || e.movementY)) return;
+          clearTimeout(timer);
+          timer = null;
+          // Once the pointer leaves, it goes soon after.
+          paused = Math.min(Math.max(due - Date.now(), 1500), 2500);
+        });
+        box.addEventListener('mouseleave', () => {
+          if (paused && !closing) goIn(paused);
+          paused = 0;
+        });
+
+        const api = {
+          set(opts) {
+            // While it is open, a new height eases in rather than jumps.
+            const shown = result === mine && box.classList.contains('db-fold-open');
+            const from = shown ? box.getBoundingClientRect().height : 0;
+            if (opts.title != null) title.textContent = opts.title;
+            if (opts.sub != null) sub.textContent = opts.sub;
+            if (opts.hold && !closing) {
+              clearTimeout(timer);
+              timer = null;
+              paused = 0;
+            }
+            if (opts.tone) {
+              box.classList.toggle('db-sheet-error', opts.tone === 'error');
+              mark.textContent = opts.tone === 'error' ? '!' : opts.tone === 'busy' ? '…' : opts.tone === 'info' ? 'i' : '✓';
+            }
+            if (opts.actions) {
+              actions.textContent = '';
+              opts.actions.forEach((a) => {
+                const b = el('button', null, a.label);
+                b.type = 'button';
+                b.addEventListener('click', () => a.onClick(api, b));
+                actions.appendChild(b);
+              });
+            }
+            if (shown && !still() && box.animate) {
+              const to = box.getBoundingClientRect().height;
+              if (Math.abs(to - from) > 0.5) box.animate([{ height: from + 'px' }, { height: to + 'px' }], { duration: 200, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+            }
+            return api;
+          },
+          done(button, label, ms) {
+            actions.querySelectorAll('button').forEach((b) => (b.disabled = true));
+            button.textContent = '✓ ' + label;
+            button.classList.add('db-sheet-done');
+            closing = true;
+            paused = 0;
+            goIn(ms);
+            return api;
+          },
+          dismissIn(ms) {
+            if (!closing) goIn(ms);
+            return api;
+          },
+          close() {
+            clearTimeout(timer);
+            if (result === mine) dropResult(true);
+          }
+        };
+        x.addEventListener('click', () => api.close());
+        api.set(options);
+        if (!refs) return api;
+        result = mine;
+        // Under the list, above Say thanks: that one stays by its button.
+        refs.body.after(box);
+        void box.offsetHeight;
+        box.classList.add('db-fold-open');
+        reveal(box);
+        return api;
+      },
+      close() {
+        setPanel(false);
+      }
+    };
   }
 
   // ---------- toast ----------
@@ -861,13 +1134,20 @@
     if (shown === card) shown = null;
   }
 
-  function toast(title, sub, error) {
+  // Where every message goes, in the panel's light or dark.
+  function toastLayer() {
     let layer = document.getElementById('dynaboost-toast');
     if (!layer) {
       layer = document.createElement('div');
       layer.id = 'dynaboost-toast';
       document.body.appendChild(layer);
     }
+    layer.classList.toggle('db-dark', isDark());
+    return layer;
+  }
+
+  function toast(title, sub, error) {
+    const layer = toastLayer();
     fadeOut(shown);
     const card = document.createElement('div');
     card.className = 'db-toast' + (error ? ' db-toast-error' : '');
@@ -898,7 +1178,7 @@
     const key = ids.join(',');
     if (!force && key === announced) return;
     announced = key;
-    chrome.runtime.sendMessage({ type: 'DB_FRAME_HERE', ids: ids }).catch(() => {});
+    send({ type: 'DB_FRAME_HERE', ids: ids }).catch(() => {});
   }
 
   /* A flow frame that does not report in gets DynaBoost from the background,
@@ -910,9 +1190,9 @@
   let frameServed = false; // the flow frame has DynaBoost - until it reloads
 
   function reachFlowFrame() {
-    if (frameAsking || frameServed || frameProblem || framed.size || !document.querySelector(FLOW_FRAME)) return;
+    if (retired || frameAsking || frameServed || frameProblem || framed.size || !document.querySelector(FLOW_FRAME)) return;
     frameAsking = true;
-    chrome.runtime.sendMessage({ type: 'DB_FRAME_INJECT' }).then(
+    send({ type: 'DB_FRAME_INJECT' }).then(
       (r) => {
         frameAsking = false;
         if (r && r.present) frameServed = true;
@@ -929,10 +1209,10 @@
     );
   }
 
-  if (!inFrame && location.hostname === 'make.powerapps.com') setInterval(reachFlowFrame, 400);
+  if (!inFrame && location.hostname === 'make.powerapps.com') timers.push(setInterval(reachFlowFrame, 400));
 
   function askFrame(id, op, payload) {
-    return chrome.runtime.sendMessage({ type: 'DB_FRAME_ASK', id: id, op: op, payload: payload, frameId: framed.get(id) }).then((r) => {
+    return send({ type: 'DB_FRAME_ASK', id: id, op: op, payload: payload, frameId: framed.get(id) }).then((r) => {
       if (!r) throw new Error('The flow did not answer. Reload the page and try again.');
       if (r.error) throw new Error(r.error);
       return r.data;
@@ -942,14 +1222,16 @@
   if (inFrame) {
     // The flow's own pages change without a reload: details, the designer, a run.
     let frameHref = location.href;
-    setInterval(() => {
-      if (location.href === frameHref) return;
-      frameHref = location.href;
-      announce();
-    }, 1000);
+    timers.push(
+      setInterval(() => {
+        if (location.href === frameHref) return;
+        frameHref = location.href;
+        announce();
+      }, 1000)
+    );
     window.addEventListener('pagehide', () => {
       announced = null;
-      chrome.runtime.sendMessage({ type: 'DB_FRAME_HERE', ids: [] }).catch(() => {});
+      if (!retired) send({ type: 'DB_FRAME_HERE', ids: [] }).catch(() => {});
     });
   }
 
@@ -1006,7 +1288,7 @@
 
   // ---------- boot ----------
 
-  window.DynaBoost = {
+  const api = (window.DynaBoost = {
     register,
     addSection,
     refresh: queueRender,
@@ -1020,8 +1302,22 @@
     // For the dialogs features open over the page, to match the panel.
     isDark: isDark,
     toast: toast,
-    togglePanel
-  };
+    toastLayer: toastLayer,
+    togglePanel,
+    // Features check it before a chrome.* call made outside onRun / onEnable.
+    alive: () => !retired && alive()
+  });
+
+  // Cut off: noticed within a second and a half, or at once when the new
+  // copy starts on this page.
+  timers.push(
+    setInterval(() => {
+      if (!alive()) retire();
+    }, 1500)
+  );
+  document.addEventListener('dynaboost-start', () => {
+    if (!alive()) retire();
+  });
 
   chrome.storage.local.get([STORAGE_KEY, SHOW_ALL_KEY, THEME_KEY], (data) => {
     Object.assign(state, (data && data[STORAGE_KEY]) || {});

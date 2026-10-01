@@ -5,6 +5,7 @@
  * field-level security stays. Done by form-tools-hook.js through Xrm.
  */
 (function () {
+  if (DynaBoost.off) return;
   const ICON =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
     '<rect x="5" y="10.5" width="14" height="10" rx="2" stroke="#3D8BFF" stroke-width="1.6"/>' +

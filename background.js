@@ -1,6 +1,7 @@
 /* The manifest injects the content scripts into new pages. Tabs that were
- * already open when the extension was installed or reloaded get them from
- * here, from the same list in the manifest. */
+ * already open when the extension was installed or updated get them from
+ * here, from the same list in the manifest: at once, and again on a toolbar
+ * click if that did not reach them. */
 const SCRIPT = chrome.runtime.getManifest().content_scripts[0];
 const FILES = SCRIPT.js;
 const CSS = SCRIPT.css || [];
@@ -24,24 +25,75 @@ function isSupported(url) {
   );
 }
 
+async function inject(tabId) {
+  // A page that already has this DynaBoost keeps it - a second copy would run
+  // every feature twice (a page loading while DynaBoost is installed gets one
+  // from the manifest too).
+  const [probe] = await chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    func: () => !!(window.DynaBoost && window.DynaBoost.register && !window.DynaBoost.retired)
+  });
+  if (probe && probe.result) return;
+  await chrome.scripting.insertCSS({ target: { tabId: tabId }, files: CSS });
+  await chrome.scripting.executeScript({ target: { tabId: tabId }, files: FILES });
+}
+
 async function openPanel(tab) {
   if (!tab.id || !isSupported(tab.url)) return;
   try {
     await chrome.tabs.sendMessage(tab.id, { type: 'DB_TOGGLE_PANEL' });
   } catch (e) {
-    // Not injected yet (the tab was open before an install or reload):
+    // Not injected yet (the tab was open before an install or update):
     // inject and retry once.
     try {
-      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: CSS });
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: FILES });
+      await inject(tab.id);
       await chrome.tabs.sendMessage(tab.id, { type: 'DB_TOGGLE_PANEL' });
     } catch (e2) {
-      // The tab closed, or scripts cannot run on this page.
+      // The tab closed, scripts cannot run on this page, or the page holds a
+      // copy put in while DynaBoost was being reloaded - only a reload helps.
+      askReload(tab.id).catch(() => {});
     }
   }
 }
 
+function askReload(tabId) {
+  return chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    func: () => {
+      let layer = document.getElementById('dynaboost-toast');
+      if (!layer) {
+        layer = document.createElement('div');
+        layer.id = 'dynaboost-toast';
+        document.body.appendChild(layer);
+      }
+      layer.classList.toggle('db-dark', matchMedia('(prefers-color-scheme: dark)').matches);
+      const card = document.createElement('div');
+      card.className = 'db-toast db-toast-error';
+      card.innerHTML =
+        '<div class="db-toast-row"><span class="db-toast-mark">!</span><div class="db-toast-text">' +
+        '<div class="db-toast-title">Reload this page to use DynaBoost</div>' +
+        '<div class="db-toast-sub">DynaBoost was updated while the page was open.</div></div></div>';
+      layer.appendChild(card);
+      setTimeout(() => card.remove(), 6000);
+    }
+  });
+}
+
 chrome.action.onClicked.addListener(openPanel);
+
+// After an update the copy running in an open tab is cut off and steps aside
+// (core.js); the new one goes in straight away, so the tab keeps its tools.
+chrome.runtime.onInstalled.addListener(async (details) => {
+  // Not on a browser update: the tabs then still have their copy.
+  if (details.reason !== 'install' && details.reason !== 'update') return;
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (!tab.id || tab.discarded || !isSupported(tab.url)) continue;
+    inject(tab.id).catch(() => {
+      // Closed meanwhile, or a page scripts cannot run on.
+    });
+  }
+});
 
 // ---------- clipboard read for content scripts ----------
 

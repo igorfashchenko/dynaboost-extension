@@ -31,7 +31,7 @@
 
   // The tiles' names, as the panel shows them.
   const NAMES = {
-    'table-export': 'Export table', 'open-all': 'Open on All', 'auto-advanced': 'Open column details', 'classic-open': 'Open in classic',
+    'table-export': 'Export table', 'open-all': 'Open on All', 'auto-advanced': 'Open advanced options', 'column-defaults': 'Column defaults', 'classic-open': 'Open in classic',
     'canvas-code': 'Edit screen code', 'canvas-tree': 'Expand tree', 'flow-edit': 'Edit flow', 'flow-run-export': 'Export run',
     'expand-all': 'Expand all steps', 'form-dump': 'Form as JSON', 'form-editor': 'Edit form', 'logical-names': 'Logical names',
     'god-mode': 'God mode', 'copy-record': 'Copy record', impersonate: 'Impersonate', 'advanced-find': 'Advanced Find',
@@ -113,9 +113,16 @@
         {
           id: 'auto-advanced',
           kind: 'switch-on',
-          where: 'a table’s New column / Edit column panel',
-          what: 'Opens “Advanced options”, so Schema name, Auto number and Searchable are in view.',
-          facts: ['!UI languages: EN, PL, DE, FR, ES, IT, NL.']
+          where: 'the New / Edit table and New / Edit column panels',
+          what: 'Opens “Advanced options”: a table’s Schema name, Type and Record ownership, a column’s Schema name, Auto number and Searchable – in view straight away.',
+          facts: ['Close it yourself and it stays closed.', '!UI languages: EN, PL, DE, FR, ES, IT, NL.']
+        },
+        {
+          id: 'column-defaults',
+          kind: 'switch-on',
+          where: 'the New column panel',
+          what: 'A new column starts the way your project wants it: <b>Allow form fill assistance</b> cleared.',
+          facts: ['Never in Edit column - a saved column stays as it is.', 'A checkbox you click yourself stays as you set it.', '!The checkbox is found by its English label.']
         },
         {
           id: 'classic-open',
@@ -319,7 +326,8 @@
           facts: [
             '!Content only – no state, assignee, dates, area, iteration, tags, priority, estimates or links.',
             'Read through the API, so long descriptions and all comments are complete.',
-            'Images become numbered placeholders (image-1.png …) with the files offered for download; <b>Copy with images</b> puts them inline (base64).'
+            'Images become numbered placeholders (image-1.png …) – never base64 in the text. <b>Download images</b> saves the files under those names: one image as it is, several in one ZIP. <b>Copy without images</b> copies the text again. With images, nothing is copied until you pick: the text without them, or the files - both buttons fold down in the panel for 6 s, like Say thanks. Without images, the text is copied at once.',
+            'Fields and comments written with the Markdown editor stay Markdown; names written in the text are replaced too.'
           ]
         },
         {
@@ -363,6 +371,7 @@
       id: 'news',
       name: 'What’s new',
       facts: [
+        '<b>2.38</b> – Open advanced options: also in the New / Edit table panel. Column defaults: a new column without form fill assistance. Copy work item: Download images saves all of them (one ZIP), Copy without images; both in the panel under the tile, which stays open. Messages in light and dark; no error in open tabs after an update.',
         '<b>2.37</b> – this help, behind (i) in the panel.',
         '<b>2.36</b> – Open on All: Tables and Apps open on All.',
         '<b>2.35</b> – Impersonate: 3 favorites; a blue frame with a faint haze.',
