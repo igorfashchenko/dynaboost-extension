@@ -820,6 +820,7 @@
    A grey heart, rose on hover and while the card is open. */
 
 .db-thanks-btn {
+  position: relative;
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -981,7 +982,7 @@
   transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 
-.db-thanks-opt > svg {
+.db-thanks-opt > svg:not(.db-go) {
   width: 20px;
   height: 20px;
   flex: none;
@@ -1016,12 +1017,11 @@
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 1px solid var(--db-navy-900);
-  border-bottom: 2px solid var(--db-gold);
+  border: 1px solid var(--db-hairline);
   border-radius: 8px;
-  background: linear-gradient(180deg, var(--db-navy-800), var(--db-navy-900));
-  color: #c9d4ee;
-  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  background: var(--db-surface);
+  color: var(--db-ink-soft);
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 
 .db-thanks-qrbtn svg {
@@ -1031,9 +1031,9 @@
 
 .db-thanks-qrbtn:hover,
 .db-qr-open .db-thanks-qrbtn {
-  background: linear-gradient(180deg, #16306a, var(--db-navy-800));
-  color: var(--db-gold);
-  box-shadow: 0 4px 14px rgba(10, 23, 56, 0.25);
+  border-color: var(--db-blue);
+  background: var(--db-blue-tint);
+  color: var(--db-blue);
 }
 
 .db-qr-in {
@@ -1068,22 +1068,6 @@
   color: var(--db-ink);
 }
 
-.db-thanks-pay,
-.db-thanks-pay:visited {
-  border-color: var(--db-navy-900);
-  border-bottom: 2px solid var(--db-gold);
-  background: linear-gradient(180deg, var(--db-navy-800), var(--db-navy-900));
-  color: #eef3ff;
-}
-
-.db-thanks-pay:hover {
-  border-color: var(--db-navy-900);
-  border-bottom-color: var(--db-gold);
-  background: linear-gradient(180deg, #16306a, var(--db-navy-800));
-  box-shadow: 0 4px 14px rgba(10, 23, 56, 0.25);
-  color: #fff;
-}
-
 .db-thanks-opt-text {
   display: flex;
   flex-direction: column;
@@ -1102,10 +1086,7 @@
   color: var(--db-ink-soft);
 }
 
-.db-thanks-pay .db-thanks-opt-sub {
-  color: #97a5c6;
-}
-
+/* Crypto's chevron: it opens below. */
 .db-thanks-opt-go {
   margin-left: auto;
   font-size: 16px;
@@ -1114,16 +1095,23 @@
   transition: transform 0.15s;
 }
 
-.db-thanks-pay .db-thanks-opt-go {
-  color: var(--db-gold);
-}
-
-.db-thanks-pay:hover .db-thanks-opt-go {
-  transform: translate(2px, -2px);
-}
-
 .db-thanks-chev {
   font-size: 20px;
+}
+
+/* The arrow out, on Card or PayPal and Rate DynaBoost: gold, the same size. */
+.db-go {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-left: auto;
+  color: var(--db-gold);
+  transition: transform 0.15s;
+}
+
+.db-thanks-pay:hover .db-go,
+.db-thanks-rate:hover .db-go {
+  transform: translate(2px, -2px);
 }
 
 .db-wallets-open .db-thanks-chev {
@@ -1263,9 +1251,128 @@
   text-align: center;
 }
 
+/* At the bottom of the card: Rate DynaBoost, and who made it - framed rows,
+   like the payments above. */
+.db-thanks-links {
+  margin-top: 8px;
+}
+
+.db-thanks-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 6px;
+  padding: 6px 11px 6px 10px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 8px;
+  background: var(--db-surface);
+  color: var(--db-ink-soft);
+  text-decoration: none;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.db-thanks-link:hover {
+  border-color: var(--db-blue);
+  background: var(--db-blue-tint);
+  color: var(--db-ink);
+}
+
+.db-link-star,
+.db-me-mono {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+
+.db-link-star {
+  display: grid;
+  place-items: center;
+  background: rgba(227, 176, 75, 0.16);
+  color: var(--db-gold);
+}
+
+.db-link-star svg {
+  width: 13px;
+  height: 13px;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.db-thanks-rate:hover .db-link-star svg {
+  transform: scale(1.15) rotate(-8deg);
+}
+
+.db-me-mono {
+  background: linear-gradient(135deg, var(--db-navy-800), var(--db-navy-900));
+  box-shadow: inset 0 0 0 1px rgba(227, 176, 75, 0.55);
+  color: var(--db-gold);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 22px;
+  text-align: center;
+}
+
+.db-link-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 12.5px;
+  line-height: 1.25;
+}
+
+.db-link-small {
+  font-size: 11px;
+}
+
+.db-link-text b {
+  font-weight: 600;
+  color: var(--db-ink);
+}
+
+.db-me-in {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  opacity: 0.9;
+  transition: opacity 0.15s;
+}
+
+.db-thanks-me:hover .db-me-in {
+  opacity: 1;
+}
+
+/* After real use, and after an update: a small gold dot on the heart. */
+.db-thanks-due::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 21px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--db-gold);
+  box-shadow: 0 0 0 2px var(--db-surface), 0 0 0 4px rgba(227, 176, 75, 0.25);
+  animation: db-due 2s ease-out infinite;
+}
+
+/* A ring that grows and fades, then a rest - a notification, not an alarm. */
+@keyframes db-due {
+  0% {
+    box-shadow: 0 0 0 2px var(--db-surface), 0 0 0 2px rgba(227, 176, 75, 0.85);
+  }
+  60%,
+  100% {
+    box-shadow: 0 0 0 2px var(--db-surface), 0 0 0 11px rgba(227, 176, 75, 0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .db-thanks-btn svg,
-  .db-tile-busy svg {
+  .db-tile-busy svg,
+  .db-thanks-due::after {
     animation: none !important;
   }
 }
@@ -1350,6 +1457,28 @@
   color-scheme: dark;
 }
 
+#dynaboost-root.db-dark .db-link-star {
+  background: rgba(227, 176, 75, 0.14);
+}
+
+#dynaboost-root.db-dark .db-me-mono {
+  box-shadow: inset 0 0 0 1px rgba(227, 176, 75, 0.45);
+}
+
+#dynaboost-root.db-dark .db-thanks-due::after {
+  animation-name: db-due-dark;
+}
+
+@keyframes db-due-dark {
+  0% {
+    box-shadow: 0 0 0 2px var(--db-surface), 0 0 0 2px rgba(227, 176, 75, 0.75);
+  }
+  60%,
+  100% {
+    box-shadow: 0 0 0 2px var(--db-surface), 0 0 0 11px rgba(227, 176, 75, 0);
+  }
+}
+
 #dynaboost-root.db-dark .db-sheet-mark {
   color: #ffffff;
 }
@@ -1417,15 +1546,6 @@
 
 #dynaboost-root.db-dark .db-thanks-in {
   background: linear-gradient(180deg, #1c2236, var(--db-surface) 70%);
-}
-
-/* The navy buttons would sink into a navy card: a lighter edge keeps them. */
-#dynaboost-root.db-dark .db-thanks-pay,
-#dynaboost-root.db-dark .db-thanks-pay:hover,
-#dynaboost-root.db-dark .db-thanks-qrbtn {
-  border-color: #2e4274;
-  border-bottom-color: var(--db-gold);
-  background: linear-gradient(180deg, #1b2f63, #12214a);
 }
 
 /* The QR code keeps its own white square - a phone reads dark on light. */

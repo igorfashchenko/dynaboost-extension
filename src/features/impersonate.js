@@ -540,7 +540,7 @@
     else toast('Impersonation did not take', 'Dataverse still sees you in this tab. Stop it with the × at the bottom and try again.', true);
   }
 
-  const HINT = 'Work in this tab as another user - their records, access and saves - to test what they see and can do. Other tabs stay you';
+  const HINT = 'Work in this tab as another user';
   const feature = {
     id: 'impersonate',
     name: 'Impersonate',

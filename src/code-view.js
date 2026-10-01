@@ -6,6 +6,8 @@
  *   DynaBoost.code.lines(text, lang, mark) one HTML string per line
  *   DynaBoost.code.html(text, lang)        the whole text as HTML, for a <pre>
  *   DynaBoost.tabCss                       the header every DynaBoost tab shares
+ *   DynaBoost.themeTab(tab, dark)          light or dark, and Rate DynaBoost in
+ *                                          the header
  *
  * attach() keeps the textarea for typing, made transparent over a coloured
  * copy of which only the visible lines are drawn. Setting ta.value redraws.
@@ -453,7 +455,24 @@
     'header::after{content:"";position:absolute;z-index:0;right:-26px;top:-22px;width:290px;height:180px;' +
     'background:' + MARK_URL + ' no-repeat right top/contain;opacity:.45;pointer-events:none}' +
     'header h1{margin:0;font-size:20px;font-weight:600;line-height:1.3;color:var(--dbc-fg-10224e)}' +
-    'header .crumbs{margin-top:3px;font-size:13px;color:var(--dbc-fg-56637f)}';
+    'header .crumbs{margin-top:3px;font-size:13px;color:var(--dbc-fg-56637f)}' +
+    // Rate DynaBoost, top right of the header: small, in a thin gold frame on a
+    // solid ground (the gold arcs behind it would swallow it), brighter under
+    // the pointer. The title keeps clear of it.
+    'header h1{padding-right:150px}' +
+    'header>.db-rate{position:absolute;z-index:2;top:12px;right:14px;display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px 0 8px;' +
+    'border:1px solid var(--dbc-bd-e8d5a8);border-radius:13px;background:var(--dbc-bg-fff);color:var(--dbc-fg-56637f);font:12px "Segoe UI",system-ui,sans-serif;text-decoration:none;white-space:nowrap;' +
+    'transition:color .15s,border-color .15s,box-shadow .15s}' +
+    'header>.db-rate:hover{color:var(--dbc-fg-10224e);border-color:var(--dbc-bd-e3b04b);box-shadow:0 0 0 3px rgba(227,176,75,.2)}' +
+    'header>.db-rate svg{width:13px;height:13px;flex:none;color:var(--dbc-fg-e3b04b);transition:transform .2s cubic-bezier(.34,1.56,.64,1)}' +
+    'header>.db-rate:hover svg{transform:scale(1.15) rotate(-8deg)}' +
+    'html.db-dark header>.db-rate:hover{box-shadow:0 0 0 3px rgba(227,176,75,.25)}';
+
+  // DynaBoost on the Chrome Web Store - the same as THANKS.rate in core.js.
+  const RATE = 'https://chromewebstore.google.com/detail/odonlnpmplbipgojjodfpedjbbahfkmk';
+  const STAR =
+    '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<path d="m12 3.8 2.5 5.1 5.6.8-4 3.9.9 5.6-5-2.6-5 2.6.9-5.6-4-3.9 5.6-.8z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
 
   // The colour table first, so each tab carries its light and dark values.
   DynaBoost.tabCss = (DynaBoost.themeVars || '') + TAB_CSS + DARK_EXTRA;
@@ -471,6 +490,18 @@
       st.id = 'db-theme-vars';
       st.textContent = DynaBoost.themeVars;
       (doc.head || doc.documentElement).appendChild(st);
+    }
+    // Every tab with the shared header offers Rate DynaBoost (a page that is
+    // only "Opening..." has no header and gets none).
+    const header = doc.querySelector('body > header');
+    if (header && !header.querySelector('.db-rate')) {
+      const a = doc.createElement('a');
+      a.className = 'db-rate';
+      a.href = RATE;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.innerHTML = STAR + '<span>Rate DynaBoost</span>';
+      header.appendChild(a);
     }
   };
   DynaBoost.code = { css: CSS, attach: attach, lines: lines, html: html };

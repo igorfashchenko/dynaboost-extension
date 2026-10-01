@@ -115,7 +115,7 @@
     group: 'Lists and grids',
     hosts: ['make.powerapps.com'],
     when: () => !!page(),
-    hint: 'The Tables and Apps pages open on "All" instead of "Recommended" and "My apps" - in every environment, each time you come to them',
+    hint: 'Tables and Apps open on All',
     icon: ICON,
     defaultOn: true,
     onEnable() {

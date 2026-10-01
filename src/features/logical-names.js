@@ -55,7 +55,7 @@
     when: () => new URLSearchParams(location.search).get('pagetype') === 'entityrecord',
     type: 'toggle',
     defaultOn: false,
-    hint: 'Shows each field’s logical name under its label on record forms - click one to copy it',
+    hint: 'Logical names under the field labels',
     icon: ICON,
     onEnable: () => tell(true),
     onDisable: () => tell(false)

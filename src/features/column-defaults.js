@@ -93,7 +93,7 @@
     group: 'Tables and columns',
     hosts: ['make.powerapps.com'],
     when: () => /\/(entities|tables)(\/|$)|\/solutions\/[^/]+/i.test(location.pathname),
-    hint: 'A new column starts the way your project wants it - for now: "Allow form fill assistance" cleared',
+    hint: 'New columns start without form fill assistance',
     icon: ICON,
     defaultOn: true,
     onEnable() {

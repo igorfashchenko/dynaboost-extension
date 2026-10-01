@@ -140,7 +140,7 @@
     type: 'toggle',
     // For this page only: a reload or another record finds it off.
     session: true,
-    hint: 'While on: every hidden field, section and tab shown, locked fields unlocked, required ones optional - kept as the form works; off puts the form back. This page only',
+    hint: 'Shows hidden fields, unlocks locked ones (this page only)',
     icon: ICON,
     onEnable: enable,
     onDisable: disable,

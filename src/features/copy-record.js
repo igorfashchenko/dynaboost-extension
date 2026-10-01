@@ -170,7 +170,7 @@
     hosts: ['dynamics.com'],
     when: () => params().get('pagetype') === 'entityrecord' && !!params().get('id'),
     type: 'action',
-    hint: 'Opens a new, unsaved copy of this record in a new tab - same form, its values, the name starting [copy]; you look it over and save',
+    hint: 'An unsaved copy of this record in a new tab',
     icon: ICON,
     onRun: run
   });

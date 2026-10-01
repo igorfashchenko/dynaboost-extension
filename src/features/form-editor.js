@@ -92,7 +92,7 @@
     hosts: ['dynamics.com'],
     when: () => new URLSearchParams(location.search).get('pagetype') === 'entityrecord',
     type: 'action',
-    hint: 'Opens the form you are looking at in the form designer of make.powerapps.com, in the solution of yours it is in',
+    hint: 'Open this form in the form designer',
     icon: ICON,
     onRun: run
   });

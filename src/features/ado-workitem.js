@@ -951,7 +951,7 @@
     when: () => !!workItemId() || /\/_(workitems|boards|backlogs|queries|sprints)\b/i.test(location.pathname),
     type: 'action',
     panelResult: true,
-    hint: 'Copies the open work item as Markdown, content only: the title, every description section and the whole comment thread. People are always replaced by User 1, User 2 ...',
+    hint: 'Copy the work item as Markdown, names replaced',
     icon: ICON,
     onRun: run
   });

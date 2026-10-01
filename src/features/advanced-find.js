@@ -29,7 +29,7 @@
     hosts: ['dynamics.com', 'make.powerapps.com'],
     when: () => onOrg() || inEnvironment(),
     type: 'action',
-    hint: 'Opens the classic Advanced Find of this environment in a new tab',
+    hint: 'Classic Advanced Find in a new tab',
     icon: ICON,
     onRun: run
   });

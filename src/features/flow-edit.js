@@ -102,7 +102,7 @@
     when: () => !!flowFromUrl(),
     inFrames: true,
     type: 'action',
-    hint: 'The flow’s definition as JSON: edit it, check it with Power Automate’s own validation and save it back',
+    hint: 'Edit the flow’s JSON and save it back',
     icon: ICON,
     onRun: run
   });

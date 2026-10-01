@@ -68,11 +68,19 @@ gets it from the background (`chrome.scripting`) as soon as it appears.
   page and every tab DynaBoost opens follow the panel.
 - (i) opens the help page. The panel hands it the tiles' names and icons
   (`dynaboost.helpTiles`) and the ids of the tiles of the current page.
-- The heart in the footer (**Say thanks**) holds the Stripe link and the
-  BTC / ETH / USDC addresses - the `THANKS` constant at the top of
-  `src/core.js`. The QR code of the Stripe link is made in advance with
-  `python tools/qr-path.py <link>` (needs `pip install segno`) and pasted into
-  `THANKS.stripeQr`; it hides itself when the link changes.
+- The heart in the footer (**Say thanks**) holds the Stripe link, the
+  BTC / ETH / USDC addresses and, quietly at the bottom, Rate DynaBoost (its
+  page on the Chrome Web Store) and the author's LinkedIn - the `THANKS`
+  constant at the top of `src/core.js`. The help page's header links to the
+  store, the code on GitHub and LinkedIn (`ABOUT` in `src/help.js`); every
+  other tab DynaBoost opens gets a quiet Rate DynaBoost in its header from
+  `DynaBoost.themeTab` (`src/code-view.js`). The QR code of the Stripe link is made in advance
+  with `python tools/qr-path.py <link>` (needs `pip install segno`) and pasted
+  into `THANKS.stripeQr`; it hides itself when the link changes.
+- A rating is suggested by a glowing gold dot on the heart: after 15 tools run
+  or switched over 3 days at least, and after every update (`background.js`
+  sets `news` to the new version), until Say thanks is opened
+  (`dynaboost.use`: `{ since, n, seen, news }`).
 
 ## Install (unpacked)
 
@@ -111,7 +119,7 @@ tools/                   qr-path.py, theme-vars.py + theme-dark.json
     id: 'my-feature',          // storage key - never change it after a release
     name: 'My feature',        // tile label, two short words at most
     group: 'Tables and columns', // section heading in the panel
-    hint: 'What it does',      // tooltip
+    hint: 'What it does',      // tooltip, a few words
     icon: '<svg viewBox="0 0 24 24">...</svg>',
     hosts: ['make.powerapps.com'],                     // which sites
     when: () => /\/canvas\//.test(location.pathname),  // which pages (optional)
@@ -181,5 +189,7 @@ justifications (`LISTING.md`), the privacy policy (`PRIVACY.md`) and the
 is under **Releases** as `v<version>`. With the store's API keys added (see the
 workflow file), the same run uploads the new version to the store.
 
-Before a release: bump `version` in `manifest.json`; a new permission or site
-needs its reason in `store/LISTING.md`, and `store/PRIVACY.md` must stay true.
+Before a release: a release with new features carries `version` as
+major.minor (`2.39`), the same as its entry in What's new; a later fix-only
+release of it is `2.39.1`, `2.39.2` ... A new permission or site needs its
+reason in `store/LISTING.md`, and `store/PRIVACY.md` must stay true.

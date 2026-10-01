@@ -36,7 +36,7 @@
     hosts: ['dynamics.com', 'make.powerapps.com'],
     when: () => onOrg() || inEnvironment(),
     type: 'action',
-    hint: 'Opens the System Jobs of this environment in a new tab - workflows, flows’ Dataverse steps and bulk jobs, with why they failed',
+    hint: 'System Jobs in a new tab',
     icon: ICON,
     onRun: run
   });

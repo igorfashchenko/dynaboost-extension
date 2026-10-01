@@ -1118,7 +1118,7 @@
       return q.get('pagetype') === 'entityrecord' || (!!q.get('etn') && !!q.get('id'));
     },
     type: 'action',
-    hint: 'Every tab, section, field and choice on the form you are looking at — hidden ones too — with values, plus its scripts, business rules and automations',
+    hint: 'The whole form as JSON, hidden fields too',
     icon: ICON,
     onRun: run
   });

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DynaBoost",
-  "version": "2.38.10",
+  "version": "2.39",
   "description": "Toolbelt for Dynamics 365, Power Apps, Power Automate and Azure DevOps. Toggle features on and off from a side panel.",
   "minimum_chrome_version": "116",
   "permissions": [

@@ -150,7 +150,7 @@
     hosts: ['make.powerapps.com'],
     when: () => new RegExp('/solutions/' + GUID, 'i').test(location.pathname),
     type: 'action',
-    hint: 'Opens the solution — or the table you are in — in the classic solution explorer',
+    hint: 'This solution or table in the classic explorer',
     icon: ICON,
     onRun: run
   });

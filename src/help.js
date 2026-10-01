@@ -29,6 +29,39 @@
     '<path d="M16.5 13.5v5M14 16h5" stroke="#E3B04B" stroke-width="1.6" stroke-linecap="round"/></svg>';
   const LOOK = svg('<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>');
 
+  /* What's new: one entry per version released on the Chrome Web Store (as
+   * major.minor, like the releases of the public repo), newest first, and
+   * only what changes for the user - tools and what they do, fixes they would
+   * notice. Not looks, links, this help or the store. The last NEWS_SHOWN. */
+  const NEWS = [
+    { v: '2.39', text: 'Light / dark: a mode you pick with the button stays, on every page – it no longer switches by itself.' },
+    {
+      v: '2.38',
+      text:
+        'Open advanced options: also in the New / Edit table panel. New: Column defaults – a new column starts without form fill assistance. ' +
+        'Copy work item: images stay numbered placeholders, never in the text; with images you choose – the text without them, or Download images (all of them, one ZIP). ' +
+        'Markdown fields and comments stay Markdown; names written in the text are replaced too. Tabs left open keep working after DynaBoost updates.'
+    },
+    { v: '2.37', text: 'First release on the Chrome Web Store.' }
+  ];
+  const NEWS_SHOWN = 5;
+
+  // Right of the title: rate it, its code, its author.
+  const ABOUT = {
+    rate: 'https://chromewebstore.google.com/detail/odonlnpmplbipgojjodfpedjbbahfkmk',
+    repo: 'https://github.com/igorfashchenko/dynaboost-extension',
+    linkedin: 'https://www.linkedin.com/in/igor-fashchenko/'
+  };
+  const STAR =
+    '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<path d="m12 3.8 2.5 5.1 5.6.8-4 3.9.9 5.6-5-2.6-5 2.6.9-5.6-4-3.9 5.6-.8z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+  const GITHUB =
+    '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>';
+  const LINKEDIN =
+    '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<rect width="24" height="24" rx="4.5" fill="#0A66C2"/>' +
+    '<path fill="#fff" d="M7.1 9.4h2.6v8.3H7.1zm1.3-4.1a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm2.9 4.1h2.5v1.1h.04c.35-.66 1.2-1.36 2.47-1.36 2.64 0 3.13 1.74 3.13 4v4.55h-2.6v-4.03c0-.96-.02-2.2-1.34-2.2-1.34 0-1.55 1.05-1.55 2.13v4.1h-2.6z"/></svg>';
+
   // The tiles' names, as the panel shows them.
   const NAMES = {
     'table-export': 'Export table', 'open-all': 'Open on All', 'auto-advanced': 'Open advanced options', 'column-defaults': 'Column defaults', 'classic-open': 'Open in classic',
@@ -357,7 +390,7 @@
       facts: [
         'No server, analytics or tracking; requests go only to the Microsoft service you have open, with your sign-in.',
         'Writes only on your click – a flow, a draft workflow or journey, code applied in Studio. Impersonate adds one header to one tab.',
-        'Stored in the browser: switch states, light / dark, org addresses, My solutions (Chrome sync), flow and journey backups, Impersonate favorites and recent users.',
+        'Stored in the browser: switch states, light / dark, org addresses, My solutions (Chrome sync), flow and journey backups, Impersonate favorites and recent users, and a count of tools used - for the rating hint on the heart.',
         'The clipboard is read only by the screen code editor.',
         'Permissions: storage, scripting, clipboard, offscreen, declarativeNetRequestWithHostAccess (Impersonate).'
       ]
@@ -370,13 +403,7 @@
     {
       id: 'news',
       name: 'What’s new',
-      facts: [
-        '<b>2.38</b> – Open advanced options: also in the New / Edit table panel. Column defaults: a new column without form fill assistance. Copy work item: Download images saves all of them (one ZIP), Copy without images; both in the panel under the tile, which stays open. Messages in light and dark; no error in open tabs after an update.',
-        '<b>2.37</b> – this help, behind (i) in the panel.',
-        '<b>2.36</b> – Open on All: Tables and Apps open on All.',
-        '<b>2.35</b> – Impersonate: 3 favorites; a blue frame with a faint haze.',
-        '<b>2.34</b> – Impersonate: work in one tab as another user.'
-      ]
+      facts: NEWS.slice(0, NEWS_SHOWN).map((n) => '<b>' + n.v + '</b> – ' + n.text)
     }
   ];
 
@@ -386,6 +413,17 @@
     'header{padding:18px 28px 16px}' +
     'header .top{display:flex;align-items:center;gap:14px}' +
     'header .mark{width:34px;height:34px;border-radius:7px;flex:none}' +
+    // The help's own links, right of the title: Rate DynaBoost, the code on
+    // GitHub, the author on LinkedIn. The other tabs get only the quiet rate link.
+    '.about{margin-left:auto;display:flex;align-items:center;gap:8px}' +
+    '.about a{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:34px;border:1px solid var(--dbc-bd-dde3f0);border-radius:17px;background:var(--dbc-bg-fff);color:var(--dbc-fg-10224e);font-size:13px;text-decoration:none;white-space:nowrap;transition:border-color .15s,box-shadow .15s,transform .15s}' +
+    '.about a:hover{border-color:var(--dbc-bd-1e6bff);box-shadow:0 2px 8px rgba(16,34,78,.08)}' +
+    '.about .db-rate{padding:0 14px 0 11px;border-color:var(--dbc-bd-e8d5a8)}' +
+    '.about .db-rate:hover{border-color:var(--dbc-bd-e3b04b);box-shadow:0 0 0 3px rgba(227,176,75,.2)}' +
+    '.about .db-rate svg{width:17px;height:17px;color:var(--dbc-fg-e3b04b);transition:transform .2s cubic-bezier(.34,1.56,.64,1)}' +
+    '.about .db-rate:hover svg{transform:scale(1.15) rotate(-8deg)}' +
+    '.about .ico{width:34px;padding:0}' +
+    '.about .ico svg{width:18px;height:18px}' +
     'header h1 .ver{margin-left:8px;font-size:12.5px;font-weight:400;color:var(--dbc-fg-56637f)}' +
     '.wrap{display:grid;grid-template-columns:300px minmax(0,1fr);align-items:start;max-width:1320px;margin:0 auto}' +
     'nav{position:sticky;top:0;max-height:100vh;overflow:auto;padding:16px 14px 40px 18px;border-right:1px solid var(--dbc-bd-dde3f0)}' +
@@ -515,7 +553,12 @@
       '<style>' + CSS + DynaBoost.tabCss + '</style></head>' +
       '<body><header><div class="top"><img class="mark" src="' + chrome.runtime.getURL('icons/icon48.png') + '" alt="">' +
       '<div><h1>DynaBoost help<span class="ver">v' + esc(version) + '</span></h1>' +
-      '<div class="crumbs">Every tool: where it works, what it does, and what it will not do.</div></div></div></header>' +
+      '<div class="crumbs">Every tool: where it works, what it does, and what it will not do.</div></div>' +
+      '<div class="about">' +
+      '<a class="db-rate" href="' + ABOUT.rate + '" target="_blank" rel="noopener noreferrer">' + STAR + '<span>Rate DynaBoost</span></a>' +
+      '<a class="ico" href="' + ABOUT.repo + '" target="_blank" rel="noopener noreferrer" title="DynaBoost on GitHub" aria-label="DynaBoost on GitHub">' + GITHUB + '</a>' +
+      '<a class="ico" href="' + ABOUT.linkedin + '" target="_blank" rel="noopener noreferrer" title="The author on LinkedIn" aria-label="The author on LinkedIn">' + LINKEDIN + '</a>' +
+      '</div></div></header>' +
       '<div class="wrap"><nav>' + nav + '</nav><main>' + main + '</main></div></body>';
     DynaBoost.themeTab(window, dark);
     wire(hereTools);

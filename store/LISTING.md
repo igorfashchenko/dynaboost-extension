@@ -90,7 +90,7 @@ PRIVATE BY DESIGN
 • Nothing is written without your click – and saves come with conflict checks and backups.
 • Impersonate needs the Act on Behalf of Another User privilege; Dataverse enforces the user's own access.
 
-DynaBoost is free. If it saves you time, the heart in the panel ("Say thanks") lets you leave a tip – it never asks and never reminds you.
+DynaBoost is free. If it saves you time, the heart in the panel ("Say thanks") lets you rate it or leave a tip – it never asks for a tip; after you have used it for a while, and after an update, a small dot on the heart suggests a rating.
 
 DynaBoost is an independent tool and is not affiliated with or endorsed by Microsoft. Microsoft, Power Apps, Power Automate, Dynamics 365 and Azure DevOps are trademarks of the Microsoft group of companies.
 ```

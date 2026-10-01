@@ -114,6 +114,9 @@
   /* Say thanks: the heart in the footer. A coin whose address is empty is
    * listed as coming soon. */
   const THANKS = {
+    // DynaBoost on the Chrome Web Store: a rating is the quickest thank you.
+    rate: 'https://chromewebstore.google.com/detail/odonlnpmplbipgojjodfpedjbbahfkmk',
+    author: { name: 'Igor Fashchenko', initials: 'IF', linkedin: 'https://www.linkedin.com/in/igor-fashchenko/' },
     stripe: 'https://buy.stripe.com/7sY3cv53q7C04Ld3sc3cc00',
     // The Stripe link as a QR code (tools/qr-path.py). Shown only while "for"
     // is the link above.
@@ -167,7 +170,7 @@
    * @param {string} feature.group     section heading in the panel
    * @param {string} feature.icon      inline SVG markup, 24x24 viewBox
    * @param {string} [feature.type]    'toggle' (default) or 'action'
-   * @param {string} [feature.hint]    tooltip
+   * @param {string} [feature.hint]    tooltip: a few words (the help says the rest)
    * @param {string[]} [feature.hosts] domains this tile applies to, e.g.
    *                                   ['make.powerapps.com', 'dynamics.com'].
    *                                   Omit for a tile that works everywhere.
@@ -273,6 +276,7 @@
     applyFeature(feature);
     queueRender();
     store({ [STORAGE_KEY]: state });
+    countUse();
   }
 
   function run(feature) {
@@ -280,6 +284,7 @@
     if (!here && !framed.has(feature.id)) return;
     const ui = here && feature.panelResult ? panelUi(feature) : null;
     if (!ui) setPanel(false);
+    countUse();
     try {
       if (here) {
         if (feature.onRun) feature.onRun(ui);
@@ -297,6 +302,45 @@
     showAll = !!value;
     store({ [SHOW_ALL_KEY]: showAll });
     render();
+  }
+
+  // ---------- a rating, suggested by a dot ----------
+
+  /* The heart in the footer gets a small glowing gold dot after DynaBoost has
+   * been used for a while - RATE_AFTER tools run or switched, over RATE_DAYS
+   * days at least - and after every update (background.js sets news to the
+   * new version). Opening Say thanks puts it away until the next update. The
+   * count stays in this browser. */
+  const USE_KEY = 'dynaboost.use'; // { since, n, seen, news }
+  const RATE_AFTER = 15;
+  const RATE_DAYS = 3;
+  let use = null;
+
+  const rateDue = () => !!use && !use.seen && (!!use.news || (use.n >= RATE_AFTER && Date.now() - use.since >= RATE_DAYS * 864e5));
+
+  function markThanks() {
+    const btn = refs && refs.thanksBtn;
+    if (!btn) return;
+    const due = rateDue();
+    btn.classList.toggle('db-thanks-due', due);
+    // What the dot says.
+    if (due) btn.title = (use.news ? 'New: DynaBoost ' + use.news + '. ' : '') + 'Enjoying DynaBoost? A rating helps.';
+    else btn.removeAttribute('title');
+  }
+
+  function countUse() {
+    if (!use || use.seen) return;
+    use.n++;
+    store({ [USE_KEY]: use });
+    markThanks();
+  }
+
+  function thanksSeen() {
+    if (!use || (use.seen && !use.news)) return;
+    use.seen = true;
+    use.news = null;
+    store({ [USE_KEY]: use });
+    markThanks();
   }
 
   // ---------- context strip ----------
@@ -400,10 +444,12 @@
   // ---------- light and dark ----------
 
   /* Until the header button is used, the panel is dark when the browser
-   * (prefers-color-scheme) or the page is. The button's choice is kept with the
-   * browser's mode at that moment, and whichever changes last wins. A click
-   * back to the default forgets the choice. */
+   * (prefers-color-scheme) or the page is - the page read once, after it has
+   * loaded, so the panel does not change with whatever is on screen when it
+   * opens. The button's choice holds on every page, until the browser's own
+   * mode changes; then the browser wins. */
   let theme = null; // { mode: 'dark' | 'light', browser: 'dark' | 'light' }
+  let pageDark = null; // what the loaded page said
 
   function luminance(color) {
     const m = String(color).match(/rgba?\(\s*(\d+)[ ,]+(\d+)[ ,]+(\d+)(?:[ ,/]+([\d.]+))?/);
@@ -413,11 +459,16 @@
   }
 
   function pageLooksDark() {
+    if (pageDark !== null) return pageDark;
     const probes = [document.querySelector('main, [role="main"]'), document.body, document.documentElement];
     for (const el of probes) {
       if (!el) continue;
       const l = luminance(getComputedStyle(el).backgroundColor);
-      if (l !== null) return l < 0.35;
+      if (l === null) continue;
+      // Kept once the page has loaded: a dialog or a dark section later on
+      // does not turn the panel dark.
+      if (document.readyState === 'complete') pageDark = l < 0.35;
+      return l < 0.35;
     }
     return null;
   }
@@ -464,11 +515,11 @@
     btn.setAttribute('aria-label', btn.title);
   }
 
+  // Kept even when it is what the page alone would give: a choice made on a
+  // light page holds on a dark one too.
   function toggleTheme() {
-    const next = isDark() ? 'light' : 'dark';
-    theme = (next === 'dark') === autoDark() ? null : { mode: next, browser: browserMode() };
-    if (theme) store({ [THEME_KEY]: theme });
-    else ext(() => chrome.storage.local.remove(THEME_KEY));
+    theme = { mode: isDark() ? 'light' : 'dark', browser: browserMode() };
+    store({ [THEME_KEY]: theme });
     applyTheme();
   }
 
@@ -479,6 +530,10 @@
       applyTheme();
     });
   chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes[USE_KEY] && changes[USE_KEY].newValue) {
+      use = changes[USE_KEY].newValue;
+      markThanks();
+    }
     if (area !== 'local' || !changes[THEME_KEY]) return;
     theme = readTheme(changes[THEME_KEY].newValue);
     applyTheme();
@@ -591,19 +646,35 @@
       if (e.key === 'Escape' && root && root.classList.contains('db-open')) setPanel(false);
     });
 
-    return { top, body, mid, foot, scope, ctx, ctxKind, ctxId, ctxSub, ctxCopy, theme: themeBtn };
+    return { top, body, mid, foot, scope, ctx, ctxKind, ctxId, ctxSub, ctxCopy, theme: themeBtn, thanksBtn: thanks.button };
   }
 
   const HEART_SVG =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
     '<path d="M12 20.3s-7.8-4.7-7.8-10.4A4.4 4.4 0 0 1 12 7.2a4.4 4.4 0 0 1 7.8 2.7c0 5.7-7.8 10.4-7.8 10.4z" ' +
     'stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>';
+  const STAR_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="m12 3.8 2.5 5.1 5.6.8-4 3.9.9 5.6-5-2.6-5 2.6.9-5.6-4-3.9 5.6-.8z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+  // LinkedIn's own mark, in its own blue.
+  const LINKEDIN_SVG =
+    '<svg class="db-me-in" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<rect width="24" height="24" rx="4.5" fill="#0A66C2"/>' +
+    '<path fill="#fff" d="M7.1 9.4h2.6v8.3H7.1zm1.3-4.1a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm2.9 4.1h2.5v1.1h.04c.35-.66 1.2-1.36 2.47-1.36 2.64 0 3.13 1.74 3.13 4v4.55h-2.6v-4.03c0-.96-.02-2.2-1.34-2.2-1.34 0-1.55 1.05-1.55 2.13v4.1h-2.6z"/></svg>';
+  // A QR code as people know it: three corner squares and a few dots.
   const QR_ICON =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-    '<rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1.2" stroke="currentColor" stroke-width="1.6"/>' +
-    '<rect x="14" y="3.5" width="6.5" height="6.5" rx="1.2" stroke="currentColor" stroke-width="1.6"/>' +
-    '<rect x="3.5" y="14" width="6.5" height="6.5" rx="1.2" stroke="currentColor" stroke-width="1.6"/>' +
-    '<path d="M14 14h2.5v2.5H14zM18 18h2.5v2.5H18zM18 14h2.5M14 20.5h2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+    '<rect x="3.5" y="3.5" width="7" height="7" rx="1.3" stroke="currentColor" stroke-width="1.6"/>' +
+    '<rect x="13.5" y="3.5" width="7" height="7" rx="1.3" stroke="currentColor" stroke-width="1.6"/>' +
+    '<rect x="3.5" y="13.5" width="7" height="7" rx="1.3" stroke="currentColor" stroke-width="1.6"/>' +
+    '<g fill="currentColor"><rect x="5.9" y="5.9" width="2.2" height="2.2" rx=".4"/><rect x="15.9" y="5.9" width="2.2" height="2.2" rx=".4"/>' +
+    '<rect x="5.9" y="15.9" width="2.2" height="2.2" rx=".4"/><rect x="13.3" y="13.3" width="2.4" height="2.4" rx=".4"/>' +
+    '<rect x="18.3" y="13.3" width="2.4" height="2.4" rx=".4"/><rect x="15.8" y="15.8" width="2.4" height="2.4" rx=".4"/>' +
+    '<rect x="13.3" y="18.3" width="2.4" height="2.4" rx=".4"/><rect x="18.3" y="18.3" width="2.4" height="2.4" rx=".4"/></g></svg>';
+  // The arrow out to another page: Card or PayPal, Rate DynaBoost.
+  const GO_OUT =
+    '<svg class="db-go" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<path d="M7.5 16.5 16.5 7.5M9.5 7.5h7v7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   const CHECK_SVG =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="m5 13 4 4L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   const COPY_SVG =
@@ -628,7 +699,10 @@
     const setOpen = (open) => {
       panel.classList.toggle('db-thanks-open', open);
       button.setAttribute('aria-expanded', String(open));
-      if (open) reveal(card);
+      if (open) {
+        thanksSeen();
+        reveal(card);
+      }
     };
     button.addEventListener('click', () => setOpen(!panel.classList.contains('db-thanks-open')));
 
@@ -644,8 +718,8 @@
       'div',
       'db-thanks-text',
       'DynaBoost is free and built to save you time. Think about how much time it has saved you — ' +
-        'and what that time is worth. If you would like, leave a voluntary tip to support its development. ' +
-        'It unlocks nothing extra; it is simply a thank you.'
+        'and what that time is worth. If you would like, leave a voluntary tip; it unlocks nothing extra. ' +
+        'A rating helps too: it lets others find it.'
     );
 
     const pay = el('a', 'db-thanks-opt db-thanks-pay');
@@ -661,7 +735,8 @@
       el('span', 'db-thanks-opt-name', 'Card or PayPal'),
       el('span', 'db-thanks-opt-sub', 'Apple Pay · Google Pay')
     );
-    pay.append(payText, el('span', 'db-thanks-opt-go', '↗'));
+    pay.append(payText);
+    pay.insertAdjacentHTML('beforeend', GO_OUT);
     // The payment page is open: say thanks.
     pay.addEventListener('click', () => {
       title.textContent = 'Thank you!';
@@ -729,10 +804,30 @@
 
     const note = el('div', 'db-thanks-note', 'Card payments are handled by Stripe — DynaBoost never sees them.');
 
+    // Quietly at the bottom: rate it, and who made it.
+    const link = (href, cls, icon, small, name, end) => {
+      const a = el('a', 'db-thanks-link ' + cls);
+      a.href = href;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      const t = el('span', 'db-link-text');
+      t.append(el('span', 'db-link-small', small), el('b', null, name));
+      a.append(icon, t);
+      a.insertAdjacentHTML('beforeend', end);
+      return a;
+    };
+    const star = el('span', 'db-link-star');
+    star.innerHTML = STAR_SVG;
+    const rate = link(THANKS.rate, 'db-thanks-rate', star, 'On the Web Store', 'Rate DynaBoost', GO_OUT);
+    const me = link(THANKS.author.linkedin, 'db-thanks-me', el('span', 'db-me-mono', THANKS.author.initials), 'Made by', THANKS.author.name, LINKEDIN_SVG);
+    me.title = THANKS.author.name + ' on LinkedIn';
+    const links = el('div', 'db-thanks-links');
+    links.append(rate, me);
+
     const cardIn = el('div', 'db-thanks-in');
     cardIn.append(head, text, payRow);
     if (qrOk) cardIn.appendChild(qr);
-    cardIn.append(cryptoBtn, wallets, note);
+    cardIn.append(cryptoBtn, wallets, note, links);
     fold(card, cardIn);
     return { button, card };
   }
@@ -844,6 +939,7 @@
   function ensureShell() {
     if (refs || retired) return;
     refs = buildShell();
+    markThanks();
     render();
   }
 
@@ -937,7 +1033,7 @@
     if (busy.has(feature.id)) tile.classList.add('db-tile-busy');
     tile.title = here
       ? feature.hint || feature.name
-      : (feature.hint || feature.name) + ' — not available on this page';
+      : (feature.hint || feature.name) + ' – not on this page';
     if (!here) tile.disabled = true;
 
     const icon = el('span');
@@ -1319,8 +1415,14 @@
     if (!alive()) retire();
   });
 
-  chrome.storage.local.get([STORAGE_KEY, SHOW_ALL_KEY, THEME_KEY], (data) => {
+  chrome.storage.local.get([STORAGE_KEY, SHOW_ALL_KEY, THEME_KEY, USE_KEY], (data) => {
     Object.assign(state, (data && data[STORAGE_KEY]) || {});
+    use = (data && data[USE_KEY]) || null;
+    if (!use || typeof use.n !== 'number') {
+      use = { since: Date.now(), n: 0, seen: false };
+      if (!inFrame) store({ [USE_KEY]: use });
+    }
+    markThanks();
     showAll = !!(data && data[SHOW_ALL_KEY]);
     theme = readTheme(data && data[THEME_KEY]);
     dropStaleTheme();

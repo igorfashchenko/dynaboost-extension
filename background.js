@@ -86,6 +86,13 @@ chrome.action.onClicked.addListener(openPanel);
 chrome.runtime.onInstalled.addListener(async (details) => {
   // Not on a browser update: the tabs then still have their copy.
   if (details.reason !== 'install' && details.reason !== 'update') return;
+  // A new version lights the dot on the heart in the panel (core.js), until
+  // Say thanks is opened.
+  if (details.reason === 'update') {
+    const key = 'dynaboost.use';
+    const use = (await chrome.storage.local.get(key))[key] || { since: Date.now(), n: 0 };
+    await chrome.storage.local.set({ [key]: Object.assign({}, use, { seen: false, news: chrome.runtime.getManifest().version }) });
+  }
   const tabs = await chrome.tabs.query({});
   for (const tab of tabs) {
     if (!tab.id || tab.discarded || !isSupported(tab.url)) continue;

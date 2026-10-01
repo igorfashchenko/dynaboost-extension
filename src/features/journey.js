@@ -425,7 +425,7 @@
     hosts: ['dynamics.com'],
     when: () => !!journeyIdFromUrl(),
     type: 'action',
-    hint: 'The definition JSON of the journey you are looking at: copy it, download it, edit a Draft and save it back. Publishing stays in the designer',
+    hint: 'The journey’s JSON: copy, download, edit a draft',
     icon: ICON,
     onRun: run
   });

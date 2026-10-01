@@ -244,7 +244,7 @@
     group: 'Azure DevOps',
     hosts: ['dev.azure.com', 'visualstudio.com'],
     when: () => onTaskboard() || onBacklog(),
-    hint: 'Opens every item on the sprint taskboard and on backlogs, on every one you open. Turning it off closes them again - on the taskboard, except the ones you had opened yourself',
+    hint: 'Opens every item on taskboards and backlogs',
     icon: ICON,
     defaultOn: false,
     onEnable() {

@@ -436,7 +436,7 @@
     when: () => /\/flows\//i.test(location.pathname),
     inFrames: true,
     type: 'action',
-    hint: 'Opens a read-only tab with every input and output of the run on screen',
+    hint: 'Every input and output of the run in one tab',
     icon: ICON,
     onRun: run,
     frameRun: frameRun,

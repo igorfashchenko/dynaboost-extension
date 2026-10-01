@@ -39,15 +39,20 @@ Power Apps, Power Automate, Dynamics 365 and Azure DevOps pages.
   anywhere.
 - **Local storage.** DynaBoost stores its own settings in your browser
   (which tools are on, the host names of environments you entered, the
-  users you last picked or starred in Impersonate, and backups of journey and flow
-  definitions you saved). You can remove them by removing
+  users you last picked or starred in Impersonate, backups of journey and flow
+  definitions you saved, and a count of how often the tools were used, so the
+  panel can suggest a rating after a while and after an update). You can remove them by removing
   the extension.
 
-- **Say thanks.** The heart in the panel footer shows a link to a payment
-  page hosted by Stripe and, optionally, the developer's crypto wallet
-  addresses. Nothing is sent when you open it; the Stripe page opens in a new
-  tab only when you click the link, and whatever you enter there is handled
-  by Stripe under its own privacy policy. DynaBoost never sees it.
+- **Say thanks.** The heart in the panel footer shows a link to DynaBoost's
+  page on the Chrome Web Store, a link to a payment page hosted by Stripe,
+  optionally the developer's crypto wallet addresses, and a link to the
+  developer's LinkedIn profile. The help page links to the same store page, to
+  DynaBoost's source code on GitHub and to the same LinkedIn profile; the other
+  tabs DynaBoost opens link to the store page. Nothing is sent when you open
+  them; each page opens in a new tab only when you click
+  its link, and whatever you enter there is handled by that site under its own
+  privacy policy. DynaBoost never sees it.
 
 ## Data sharing
 

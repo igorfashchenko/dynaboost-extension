@@ -370,7 +370,7 @@
     // the canvas Studio or a flow.
     when: () => !/\/canvas\//i.test(location.pathname),
     type: 'action',
-    hint: 'Copy the list on this page as Markdown or CSV',
+    hint: 'Copy or download this list as Markdown or CSV',
     icon: ICON,
     onRun: run
   });

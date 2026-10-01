@@ -147,7 +147,7 @@
     group: 'Azure DevOps',
     hosts: ['dev.azure.com', 'visualstudio.com'],
     when: () => /\/_wiki\b/i.test(location.pathname),
-    hint: 'Opens every node of the wiki tree; turning it off collapses only what it opened',
+    hint: 'Opens every node of the wiki tree',
     icon: ICON,
     defaultOn: false,
     onEnable() {

@@ -899,7 +899,7 @@
       return /\/sfa\/workflow\/|\/tools\/solution\//i.test(location.pathname) || (q.get('etn') || '').toLowerCase() === 'workflow' || !!scanFrames(window, 0);
     },
     type: 'action',
-    hint: 'Opens the classic workflow in a tab: its steps written out with labels, and its XAML in an editor that saves back (draft workflows only)',
+    hint: 'The workflow’s steps and XAML in a tab',
     icon: ICON,
     onRun: run
   });

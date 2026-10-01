@@ -117,7 +117,7 @@
     group: 'Tables and columns',
     hosts: ['make.powerapps.com'],
     when: () => TABLE_PAGES.test(location.pathname),
-    hint: 'In the New / Edit table and column panels, expands "Advanced options" for you - Schema name, Type, Record ownership, Auto number, Searchable in view straight away',
+    hint: 'Opens “Advanced options” in table and column panels',
     icon: ICON,
     defaultOn: true,
     onEnable() {

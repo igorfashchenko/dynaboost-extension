@@ -656,7 +656,7 @@
     when: onStudio,
     type: 'toggle',
     defaultOn: false,
-    hint: 'Opens every branch of the Studio tree view. Turning it off closes what it opened — the tree is left as it was',
+    hint: 'Opens every branch of the tree view',
     icon:
       '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
       '<path d="M5 5h5M9 12h5M9 19h5M6.5 5v14M6.5 12H9M6.5 19H9" stroke="#3D8BFF" stroke-width="1.6" stroke-linecap="round"/>' +
@@ -682,7 +682,7 @@
     hosts: ['make.powerapps.com'],
     when: onStudio,
     type: 'action',
-    hint: 'With View code open in Studio: an editable copy of that code. Edit it, then Apply to Studio replaces those controls (Save in Studio to keep it)',
+    hint: 'Edit the code from View code and apply it to Studio',
     icon: ICON,
     onRun: run
   });

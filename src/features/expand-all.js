@@ -120,7 +120,7 @@
     hosts: ['make.powerautomate.com'],
     when: () => /\/flows\//i.test(location.pathname),
     inFrames: true,
-    hint: 'Opens every collapsed Condition, branch, Scope and Apply to each; turning it off restores what you had',
+    hint: 'Opens every collapsed step of the flow',
     icon: ICON,
     defaultOn: false,
     onEnable() {
