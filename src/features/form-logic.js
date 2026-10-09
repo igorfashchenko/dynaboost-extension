@@ -628,7 +628,9 @@
     const rules = Array.isArray(logic.businessRules) ? logic.businessRules.filter((r) => r.appliesHere).length : 0;
     const n = (x) => (Array.isArray(x) ? x.length : 0);
     const a = logic.automations;
-    const wf = n(a.workflows) + n(a.pluginSteps) + n(a.customApis);
+    // Business process flows are not counted here: Form as JSON shows them in
+    // its process bar.
+    const wf = (Array.isArray(a.workflows) ? a.workflows.filter((w) => w.kind !== 'Business process flow').length : 0) + n(a.pluginSteps) + n(a.customApis);
     const flows = a.flows;
     return {
       libraries: logic.scripts.libraries.length,
@@ -785,7 +787,8 @@
 
   /* Automations, in the order they come into play: in the save pipeline
    * (plug-in steps, classic workflows, cloud flows), called on demand
-   * (actions, Custom APIs), guiding the user (business process flows).
+   * (actions, Custom APIs). Business process flows are in Form as JSON's
+   * process bar, with their Open and Edit in....
    * One card per kind, one row per item: its name opens it, Edit in... picks
    * the solution; the line of kinds on top shows one kind at a time. */
   const AUTO = [
@@ -793,8 +796,7 @@
     { k: 'wf', name: 'Classic workflows', chip: 'Workflows', group: 'On save' },
     { k: 'flow', name: 'Cloud flows', chip: 'Flows', group: 'On save' },
     { k: 'act', name: 'Actions', chip: 'Actions', group: 'On demand' },
-    { k: 'api', name: 'Custom APIs', chip: 'Custom APIs', group: 'On demand' },
-    { k: 'bpf', name: 'Business process flows', chip: 'Process flows', group: 'Guided' }
+    { k: 'api', name: 'Custom APIs', chip: 'Custom APIs', group: 'On demand' }
   ];
 
   function row(o) {
@@ -871,9 +873,7 @@
             .join('<br>'),
         meta: esc(x.kind) + ' · ' + esc(x.binding) + (x.private ? ' · private' : ''),
         tools: editBtn('customapi', x.id, x.name)
-      }),
-    bpf: (x) =>
-      row({ item: 'wf:' + x.id, on: x.active, modified: x.modifiedOn, search: x.name, name: opener('process', x.id, x.name), tools: editBtn('workflow', x.id, x.name) })
+      })
   };
 
   function automationsHtml(logic) {
@@ -884,8 +884,7 @@
       wf: wfs('Classic workflow'),
       flow: a.flows,
       act: wfs('Action'),
-      api: a.customApis,
-      bpf: wfs('Business process flow')
+      api: a.customApis
     };
 
     const chips = [];
@@ -915,7 +914,7 @@
           (Array.isArray(list) ? ' <span class="lg-dim">' + list.length + '</span>' : '') + '</h2><div class="lg-rows">' + body + '</div></section>'
       );
     }
-    if (!sections.length) return '<p class="lg-empty">Nothing runs on this table: no plug-in step, workflow, cloud flow, action, Custom API or business process flow.</p>';
+    if (!sections.length) return '<p class="lg-empty">Nothing runs on this table: no plug-in step, workflow, cloud flow, action or Custom API.</p>';
     return (
       '<div class="lg-auto"><div class="lg-af"><a href="#" data-af="" aria-pressed="true">All <span class="n">' + total + '</span></a>' + chips.join('') + '</div>' +
       sections.join('') + '</div>'
@@ -938,7 +937,8 @@
     '.lg-sum a{padding:3px 11px;border:1px solid var(--dbc-bd-e8d5a8);border-radius:12px;background:var(--dbc-bg-fffaf0);color:var(--dbc-fg-10224e);text-decoration:none}' +
     '.lg-sum a .n{color:var(--dbc-fg-9a6a12)}' +
     '.lg-sum a:hover{border-color:var(--dbc-bd-e3b04b);background:var(--dbc-bg-fff3dc)}' +
-    '.lg-sum a[aria-pressed="true"]{background:var(--dbc-bg-10224e);border-color:var(--dbc-bd-10224e);color:var(--dbc-fg-fff)}.lg-sum a[aria-pressed="true"] .n{color:var(--dbc-fg-f3d58f)}' +
+    // The open one: the same gold, stronger - no filled navy.
+    '.lg-sum a[aria-pressed="true"]{background:var(--dbc-bg-fff3dc);border-color:var(--dbc-bd-e3b04b);box-shadow:inset 0 0 0 1px var(--dbc-bd-e3b04b);color:var(--dbc-fg-10224e)}.lg-sum a[aria-pressed="true"] .n{color:var(--dbc-fg-9a6a12)}' +
     '.lg-dim{color:var(--dbc-fg-97a5c6);font-weight:400}' +
     '.lg-note{margin:0 0 12px;font-size:12.5px;color:var(--dbc-fg-56637f)}' +
     '.lg-empty{margin:0 0 12px;padding:14px 16px;color:var(--dbc-fg-56637f);background:var(--dbc-bg-fff);border:1px dashed var(--dbc-bd-c6d0e4);border-radius:8px}' +
@@ -969,7 +969,6 @@
     '.lg-i{display:inline-flex;flex:none}.lg-i svg{width:13px;height:13px}' +
     '.lg-i-js{color:var(--dbc-fg-b7791f)}.lg-i-rule{color:var(--dbc-fg-7c3aed)}.lg-i-wf{color:var(--dbc-fg-0f766e)}.lg-i-flow{color:var(--dbc-fg-1e6bff)}.lg-i-cmd{color:var(--dbc-fg-c2410c)}' +
     '.lg-sum a{display:inline-flex;align-items:center;gap:5px}.lg-sum a .lg-i svg{width:12px;height:12px}' +
-    '.lg-sum a[aria-pressed="true"] .lg-i{color:var(--dbc-fg-f3d58f)}' +
     '.lg-h{display:flex;align-items:center;gap:8px}.lg-h .lg-i svg{width:16px;height:16px}' +
     '.lg-mark{display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:3px 7px;border:1px solid var(--dbc-bd-e8d5a8);border-radius:10px;background:var(--dbc-bg-fff);cursor:pointer;vertical-align:-3px;outline:none}' +
     '.lg-mark .lg-i svg{width:14px;height:14px}' +
@@ -1021,10 +1020,10 @@
     '.lg-i-plug{color:var(--dbc-fg-be185d)}.lg-i-act{color:var(--dbc-fg-0369a1)}.lg-i-api{color:var(--dbc-fg-4d7c0f)}.lg-i-bpf{color:var(--dbc-fg-475569)}' +
     '.lg-af{display:flex;flex-wrap:wrap;align-items:baseline;gap:5px 13px;margin:0 0 5px;padding:0 0 8px;border-bottom:1px solid var(--dbc-bd-dde3f0);font-size:12.5px}' +
     '.lg-af a{padding:2px 0;border-bottom:2px solid transparent;color:var(--dbc-fg-56637f);text-decoration:none}.lg-af a .n{color:var(--dbc-fg-97a5c6)}' +
-    '.lg-af a:hover{color:var(--dbc-fg-10224e)}.lg-af a[aria-pressed="true"]{color:var(--dbc-fg-10224e);font-weight:600;border-bottom-color:var(--dbc-bd-e3b04b)}' +
+    '.lg-af a:hover{color:var(--dbc-fg-10224e)}.lg-af a[aria-pressed="true"]{color:var(--dbc-fg-10224e);border-bottom-color:var(--dbc-bd-e3b04b)}' +
     '.lg-af-g{margin-left:8px;font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dbc-fg-97a5c6)}' +
     '.lg-auto[data-show] .lg-sec{display:none}' +
-    ['plug', 'wf', 'flow', 'act', 'api', 'bpf'].map((k) => '.lg-auto[data-show="' + k + '"] .lg-sec[data-k="' + k + '"]{display:block}').join('') +
+    ['plug', 'wf', 'flow', 'act', 'api'].map((k) => '.lg-auto[data-show="' + k + '"] .lg-sec[data-k="' + k + '"]{display:block}').join('') +
     '.lg-sec .lg-h{margin:21px 0 8px}.lg-h .lg-dim{font-size:13px}' +
     '.lg-rows{background:var(--dbc-bg-fff);border:1px solid var(--dbc-bd-dde3f0);border-left:3px solid var(--dbc-bd-e3b04b);border-radius:8px;overflow:hidden}' +
     '.lg-r{display:grid;grid-template-columns:8px minmax(0,1.618fr) minmax(0,1fr) auto;column-gap:13px;align-items:start;padding:8px 13px;border-top:1px solid var(--dbc-bd-edf1f8);transition:background .6s}' +
@@ -1197,8 +1196,9 @@
         '<p class="lg-warn">“' + esc(name) + '” would be edited in the <b>' + esc(solName) + '</b>. ' +
         'A change made there belongs to none of your solutions: it is not exported with them and will not reach test or production.</p>' +
         (own ? '<p class="lg-note" style="margin-top:10px">It is also in ' + plural(own, 'unmanaged solution') + ' of your own - cancel and pick that one instead.</p>' : '') +
-        '<div class="lg-row"><button data-close>Cancel</button><button class="primary" data-go-default>' +
-        (toEditor ? 'Edit in the Default Solution' : 'Open the Default Solution') + '</button></div>';
+        // As in Microsoft's dialogs: the main button first, Cancel after.
+        '<div class="lg-row"><button class="primary" data-go-default>' +
+        (toEditor ? 'Edit in the Default Solution' : 'Open the Default Solution') + '</button><button data-close>Cancel</button></div>';
       m.box.querySelector('[data-go-default]').addEventListener('click', go);
     });
   }
@@ -1284,8 +1284,16 @@
       q.value = '';
       q.dispatchEvent(new tab.Event('input'));
     }
-    let row = doc.querySelector('#v-form .row[data-field="' + field + '"]');
+    // On the form itself first; a column only in the business process opens
+    // its stage in the process bar (form-dump.js).
+    const rows = Array.from(doc.querySelectorAll('#v-form .row[data-field="' + field + '"]'));
+    let row = rows.find((r) => !r.closest('.bpf-card')) || rows[0] || null;
     let view = 'v1';
+    const stage = row && row.closest('.sec.bpf');
+    if (stage) {
+      const pill = doc.querySelector('.bpf-st[data-bpf="' + stage.getAttribute('data-stage') + '"]');
+      if (pill && pill.getAttribute('aria-pressed') !== 'true') pill.click();
+    }
     if (!row) {
       row = doc.querySelector('#v-fields .row[data-field="' + field + '"]');
       view = 'v2';
@@ -1660,6 +1668,8 @@
     prefetch: (entity, entitySet) => {
       flowsFor(entity, entitySet);
     },
+    // The cloud flows on a table, for Compare with... (env-compare.js).
+    flows: flowsFor,
     updateMarks: updateMarks,
     modal: modal,
     icon: icon,

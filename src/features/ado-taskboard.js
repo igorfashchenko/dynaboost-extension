@@ -247,6 +247,7 @@
     hint: 'Opens every item on taskboards and backlogs',
     icon: ICON,
     defaultOn: false,
+    countClick: true,
     onEnable() {
       on = true;
       // A fresh look at the sprint on screen: what is open now is yours.

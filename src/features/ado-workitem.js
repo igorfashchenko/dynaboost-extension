@@ -838,7 +838,7 @@
   /* From the panel (ui): its tile pulses while the item is read, then one
    * answer folds down under the list. Without images the text is
    * copied at once; with images nothing is copied until a button says how -
-   * the text without them, or the image files. What went wrong goes to the
+   * the text without the images, or the text and the image files saved. What went wrong goes to the
    * bottom of the page; the panel stays open. */
   async function run(ui) {
     if (running) return;
@@ -872,6 +872,9 @@
       const plain = withFileNames(built.markdown, ctx.images);
       const total = ctx.images.length;
 
+      // Every copy made is a use.
+      const use = () => DynaBoost.saved('ado-workitem');
+
       const bits = [];
       bits.push(built.stats.sections + (built.stats.sections === 1 ? ' section' : ' sections'));
       bits.push(built.stats.comments + (built.stats.comments === 1 ? ' comment' : ' comments'));
@@ -881,6 +884,7 @@
         label: 'Copy without images',
         onClick: async (self, button) => {
           if (await copy(plain)) {
+            use();
             self.set({ tone: 'ok', title: 'Copied ' + name, sub: total ? 'The text is on the clipboard, images as placeholders' : bits.join(', ') }).done(button, 'Copied', 1000);
           } else {
             self.set({ tone: 'error', sub: 'Clipboard blocked. Click inside the page first, then retry.', hold: true }).dismissIn(9000);
@@ -890,6 +894,7 @@
 
       if (!total) {
         if (await copy(plain)) {
+          use();
           // Nothing to click: it only says what was copied.
           answer({ tone: 'ok', title: 'Copied ' + name, sub: bits.join(', '), hold: true }).dismissIn(2000);
         } else {
@@ -913,24 +918,36 @@
         actions: [
           copyText,
           {
-            label: total === 1 ? 'Download image' : 'Download ' + total + ' images',
+            // Always a copy too: the text (the images named by their file
+            // names) goes to the clipboard first - while the click still
+            // allows it - and then the images are saved.
+            label: total === 1 ? 'Copy with image' : 'Copy with ' + total + ' images',
             onClick: async (self, button) => {
               const label = button.textContent;
+              const copied = await copy(plain);
               button.disabled = true;
               button.textContent = 'Saving…';
-              self.set({ tone: 'busy', sub: total === 1 ? 'Reading the image...' : 'Reading ' + total + ' images...', hold: true });
+              self.set({ tone: 'busy', sub: (copied ? 'Copied. ' : '') + (total === 1 ? 'Reading the image...' : 'Reading ' + total + ' images...'), hold: true });
               const r = await saveImages(ctx.images, name);
               const missed = total - r.saved;
               if (!r.saved) {
                 button.disabled = false;
                 button.textContent = label;
-                self.set({ tone: 'error', sub: 'Could not read the images. Reload the page and try again.' }).dismissIn(9000);
+                self.set({ tone: 'error', sub: (copied ? 'The text is copied, but the images could not be read.' : 'Could not read the images.') + ' Reload the page and try again.' }).dismissIn(9000);
                 return;
               }
+              if (!copied) {
+                button.disabled = false;
+                button.textContent = label;
+                self.set({ tone: 'error', sub: 'Saved ' + r.file + ', but Chrome blocked the copy. Click inside the page first, then retry.', hold: true }).dismissIn(9000);
+                return;
+              }
+              use();
               self.set({
                 tone: 'ok',
-                sub: (r.saved === 1 ? 'Saved ' : r.saved + ' images saved in ') + r.file + (missed ? ' - ' + missed + ' could not be read' : '')
-              }).done(button, 'Saved', missed ? 4000 : 1500);
+                title: 'Copied ' + name,
+                sub: 'Text on the clipboard; ' + (r.saved === 1 ? 'image saved: ' : r.saved + ' images saved in ') + r.file + (missed ? ' - ' + missed + ' could not be read' : '')
+              }).done(button, 'Copied', missed ? 4000 : 1500);
             }
           }
         ]

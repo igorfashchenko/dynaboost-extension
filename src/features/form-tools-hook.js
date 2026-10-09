@@ -63,7 +63,7 @@
     if (!s) {
       s = document.createElement('style');
       s.id = STYLE;
-      document.head.appendChild(s);
+      (document.head || document.documentElement).appendChild(s);
     }
     const c = dark
       ? { bg: '#1f2233', fg: '#e3e9f7', bd: '#e3b04b', okBg: '#123322', ok: '#4cc27a' }
@@ -115,7 +115,9 @@
         clearTimeout(timer);
         timer = setTimeout(drawNames, 300);
       });
-      observer.observe(document.body, { childList: true, subtree: true });
+      // A page asked early (the process designer, still loading) has no
+    // body yet - its root is there from the start.
+    observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
     }
   }
 
@@ -130,6 +132,7 @@
       e.stopPropagation();
       const name = b.textContent;
       const done = () => {
+        window.postMessage({ source: SRC + '-event', type: 'name-copied' }, location.origin);
         b.classList.add('db-ln-ok');
         b.textContent = 'copied';
         setTimeout(() => {
@@ -366,7 +369,7 @@
         unlockAll(false);
       }, 350);
     });
-    god.observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-disabled', 'aria-readonly', 'disabled', 'readonly'] });
+    god.observer.observe(document.body || document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-disabled', 'aria-readonly', 'disabled', 'readonly'] });
     // UCI can draw a control again right after the first unlock (calculated
     // columns, for one): a second full pass once it has.
     setTimeout(() => {

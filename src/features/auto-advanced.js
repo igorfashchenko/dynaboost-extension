@@ -35,6 +35,8 @@
   // Panes where a toggle without aria-expanded was clicked. Such a toggle may
   // be drawn again after the click, so it is clicked once per pane.
   const opened = new WeakSet();
+  // Panes counted as a use, for Time saved: once each, however many clicks.
+  const counted = new WeakSet();
 
   let observer = null;
   let timer = null;
@@ -91,6 +93,11 @@
           retry = Math.max(retry, SETTLE + 50);
         }
         el.click();
+        const pane = el.closest(PANES) || document.body;
+        if (!counted.has(pane)) {
+          counted.add(pane);
+          DynaBoost.saved('auto-advanced');
+        }
       }
     }
     // A click that did not take gets another once the pane has settled, up

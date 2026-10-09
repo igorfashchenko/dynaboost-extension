@@ -4,8 +4,9 @@
  * Values come from the open form (form-tools-hook.js). The columns a new row
  * accepts come from one metadata request per table and session - no formula,
  * calculated, rollup, system or autonumber columns, status, owner or process
- * fields. The values reach the new tab through chrome.storage.local and are
- * dropped if not picked up within a minute. Nothing is saved until you save.
+ * fields. The values reach the new tab through chrome.storage.local, for a
+ * new record of that table in the same environment, and are dropped if not
+ * picked up within a minute. Nothing is saved until you save.
  */
 (function () {
   if (DynaBoost.off) return;
@@ -125,13 +126,14 @@
     const nameField = values.find((v) => v.name === info.name && typeof v.value === 'string');
     if (nameField) nameField.value = '[copy] ' + nameField.value;
 
-    await chrome.storage.local.set({ [JOB]: { entity: rec.entity, from: rec.name, values: values, at: Date.now() } });
+    await chrome.storage.local.set({ [JOB]: { origin: location.origin, entity: rec.entity, from: rec.name, values: values, at: Date.now() } });
     const q = params();
     tab.location.replace(
       location.origin + '/main.aspx?' + (q.get('appid') ? 'appid=' + encodeURIComponent(q.get('appid')) + '&' : '') +
         'pagetype=entityrecord&etn=' + encodeURIComponent(rec.entity) + (rec.formId ? '&formid=' + rec.formId : '')
     );
     DynaBoost.toast('Copy record', 'The copy opens in a new tab - ' + values.length + ' fields' + (nameField ? ', named “' + nameField.value + '”' : '') + '. Nothing is saved until you save it.');
+    DynaBoost.saved('copy-record');
   }
 
   // ---------- in the new tab: fill it in ----------
@@ -142,7 +144,8 @@
     if (q.get('pagetype') !== 'entityrecord' || q.get('id') || !q.get('etn')) return;
     chrome.storage.local.get(JOB, (d) => {
       const job = d && d[JOB];
-      if (!job || Date.now() - job.at > MAX_AGE || job.entity !== q.get('etn').toLowerCase()) return;
+      // Only a new record of the same table, in the same environment.
+      if (!job || Date.now() - job.at > MAX_AGE || job.origin !== location.origin || job.entity !== q.get('etn').toLowerCase()) return;
       chrome.storage.local.remove(JOB);
       let tries = 0;
       const fill = async () => {

@@ -43,6 +43,11 @@
 
   // ---------- storage ----------
 
+  // Drawn, not typed: a ✎ or ✕ sits off centre in most fonts.
+  const PEN =
+    '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 10l.6-2.4L8.2 2a1 1 0 0 1 1.4 0l.4.4a1 1 0 0 1 0 1.4L4.4 9.4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+  const CROSS = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+
   function normalise(list) {
     const out = [];
     for (let i = 0; i < MAX; i++) out.push((list && list[i]) || null);
@@ -327,10 +332,11 @@
       '<span class="db-slot-env">' + esc(pin.envName) + '</span>' +
       '<span class="db-slot-sol">' + esc(pin.solName) + '</span>' +
       // Rename top-left, remove top-right: far apart, so a slip does not delete.
-      '<button type="button" class="db-slot-tool db-slot-edit" data-act="edit" title="Rename">✎</button>' +
-      '<button type="button" class="db-slot-tool db-slot-del" data-act="del" title="Remove">✕</button>';
+      '<button type="button" class="db-slot-tool db-slot-edit" data-act="edit" title="Rename" aria-label="Rename">' + PEN + '</button>' +
+      '<button type="button" class="db-slot-tool db-slot-del" data-act="del" title="Remove" aria-label="Remove">' + CROSS + '</button>';
     const go = (e) => {
       const url = urlOf(pin);
+      DynaBoost.saved('solution-pins');
       if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1 || elsewhere()) {
         window.open(url, '_blank', 'noopener');
         return;
@@ -343,8 +349,18 @@
       if (!act) return go(e);
       e.stopPropagation();
       if (act.dataset.act === 'del') {
+        // A slip of the mouse is undone from the message.
+        const gone = pins[i];
         pins[i] = null;
         save();
+        DynaBoost.toast('Removed from My solutions', gone.solName + ' · ' + gone.envName, false, {
+          label: 'Undo',
+          run: () => {
+            if (pins[i]) return;
+            pins[i] = gone;
+            save();
+          }
+        });
       } else {
         openDialog(i, Object.assign({}, pin));
       }

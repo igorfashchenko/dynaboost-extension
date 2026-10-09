@@ -10,6 +10,10 @@
  * A pasted control whose name exists comes in as a copy (Name_1), so the
  * editor lists the names it finds. Checks: tabs in the indentation, odd
  * indentation, duplicate names, ": " or " #" in a plain value.
+ *
+ * Versions, for the tab and per code loaded (a screen, or a set of
+ * controls): the code as loaded - always kept - and the last 5 applied to
+ * Studio; a click loads one into the editor.
  */
 (function () {
   if (DynaBoost.off) return;
@@ -19,6 +23,8 @@
     '<path d="m8.5 10-2.5 2.5L8.5 15M12 10l2.5 2.5L12 15" stroke="#3D8BFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
     '<path d="m16 17 1.5-6" stroke="#E3B04B" stroke-width="1.6" stroke-linecap="round"/>' +
     '</svg>';
+
+  const MAX_SAVED = 5; // versions per code loaded, besides the original
 
   const CHECK =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="m5 13 4 4L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -325,17 +331,41 @@
       'main{flex:1;display:flex;gap:14px;min-height:0;padding:14px 22px 18px}' +
       'textarea{flex:1;width:100%;resize:none;padding:14px 18px;border:1px solid var(--dbc-bd-dde3f0);border-radius:8px;background:var(--dbc-bg-fff);color:var(--dbc-fg-10224e);font:12.5px/1.45 ui-monospace,Consolas,monospace;white-space:pre;tab-size:2}' +
       'textarea:focus{outline:2px solid var(--dbc-bd-1e6bff);outline-offset:-1px}' +
-      'aside{flex:none;width:230px;overflow:auto;padding:12px 14px;border:1px solid var(--dbc-bd-dde3f0);border-radius:8px;background:var(--dbc-bg-fff);font-size:12.5px}' +
-      'aside h2{margin:0 0 4px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--dbc-fg-56637f)}' +
-      'aside ul{margin:0 0 12px;padding-left:16px}aside li{font-family:ui-monospace,Consolas,monospace}' +
-      'aside .none{color:var(--dbc-fg-8a94ab)}' +
+      // The pane beside the editor, as in the flow editor: Versions | Controls
+      'aside{flex:none;width:340px;display:none;flex-direction:column;min-height:0;border:1px solid var(--dbc-bd-dde3f0);border-radius:8px;background:var(--dbc-bg-fff)}' +
+      'body.side aside{display:flex}' +
+      '.ck-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--dbc-bd-dde3f0);font-weight:600}' +
+      '.ck-head .pn{padding:4px 10px;border:1px solid transparent;border-radius:6px;background:none;color:var(--dbc-fg-56637f);font-weight:600;font-size:13px}' +
+      '.ck-head .pn:hover:enabled{border-color:transparent;background:var(--dbc-bg-f5f7fc);color:var(--dbc-fg-10224e)}' +
+      'body.pane-versions #tab-versions,body.pane-names #tab-names{background:var(--dbc-bg-e9f1ff);color:var(--dbc-fg-10224e)}' +
+      '.ck-head #vs-close{margin-left:auto;padding:2px 8px;border:none;background:none;color:var(--dbc-fg-56637f);font-size:15px;line-height:1}' +
+      '.ck-head #vs-close:hover:enabled{background:var(--dbc-bg-f5f7fc);color:var(--dbc-fg-10224e)}' +
+      '#vs-list,#names{display:none;flex:1;overflow:auto}' +
+      'body.pane-versions #vs-list,body.pane-names #names{display:block}' +
+      '#vs-list{padding:6px 0}#names{padding:12px 14px;font-size:12.5px}' +
+      '#names h2{margin:0 0 4px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--dbc-fg-56637f)}' +
+      '#names ul{margin:0 0 12px;padding-left:16px}#names li{font-family:ui-monospace,Consolas,monospace}' +
+      '#names .none{color:var(--dbc-fg-8a94ab)}' +
       '.warn{margin-top:8px;padding:8px 12px;border-radius:6px;background:var(--dbc-bg-fdf1d6);color:var(--dbc-fg-7a5410);font-size:13px;max-width:900px}' +
       '.warn[hidden]{display:none}' +
       '.log{margin-top:8px;font-size:12.5px;color:var(--dbc-fg-56637f)}.log[hidden]{display:none}.log summary{cursor:pointer}.log ol{margin:4px 0 0;padding-left:22px}' +
+      '.sep{width:1px;align-self:stretch;margin:2px 4px;background:var(--dbc-bg-dde3f0)}' +
+      '.nb{display:inline-block;min-width:18px;margin-left:4px;padding:0 5px;border-radius:9px;background:var(--dbc-bg-eef2f9);color:var(--dbc-fg-56637f);font-size:11px;line-height:17px;text-align:center}.nb:empty{display:none}' +
+      // Versions rows, as in the flow editor
+      '.vs-h{padding:10px 14px 4px;font-size:12px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;color:var(--dbc-fg-56637f)}' +
+      '.vs{display:flex;align-items:flex-start;gap:10px;margin:4px 10px;padding:8px 10px;border:1px solid var(--dbc-bd-e3e8f2);border-radius:6px;background:var(--dbc-bg-fff);cursor:pointer;transition:border-color .15s,background .15s}' +
+      '.vs:hover{border-color:var(--dbc-bd-1e6bff);background:var(--dbc-bg-f7faff)}' +
+      '.vs.orig{border-left:3px solid var(--dbc-bd-e3b04b)}.vs.here{box-shadow:0 0 0 2px var(--dbc-bd-1e6bff) inset}.vs.orig.live{background:var(--dbc-bg-fffaf0)}' +
+      '.vs-dot{flex:none;width:9px;height:9px;margin-top:6px;border-radius:50%;background:var(--dbc-bg-c6d0e4)}' +
+      '.vs.live .vs-dot{background:var(--dbc-bg-1c9b4a)}.vs.orig .vs-dot{background:var(--dbc-bg-e3b04b)}' +
+      '.vs-main{flex:1;min-width:0}.vs-t{font-weight:600;font-size:13px}.vs-m{font-size:12px;color:var(--dbc-fg-56637f)}' +
+      '.vs-tag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:8px;font-size:11px;font-weight:600;vertical-align:1px}' +
+      '.vs-tag.live{background:var(--dbc-bg-e4f4e8);color:var(--dbc-fg-1c6b32)}.vs-tag.here{background:var(--dbc-bg-e9f1ff);color:var(--dbc-fg-1e4fb8)}' +
+      '.vs-note{padding:6px 14px 8px;font-size:12px;color:var(--dbc-fg-8a95ad)}' +
       DynaBoost.code.css +
       DynaBoost.tabCss +
       '</style>' +
-      '<body>' +
+      '<body class="side pane-versions">' +
       '<header>' +
       '<h1 id="title">Screen code</h1>' +
       '<ol class="steps">' +
@@ -351,10 +381,16 @@
       '<button id="load">Load from Studio</button>' +
       '<button id="revert" disabled>Undo changes</button>' +
       '<button id="dl">Download</button>' +
+      '<span class="sep"></span>' +
+      '<button id="versions" aria-pressed="true" title="The code as loaded and what you applied - click one to load it">Versions<span class="nb" id="vs-n"></span></button>' +
       '<span class="status" id="status"></span>' +
       '</div></header>' +
       '<main><textarea id="ed" spellcheck="false" placeholder="Open View code in Studio and click Load from Studio \u2014 or paste the code here"></textarea>' +
-      '<aside id="names"></aside></main>'
+      '<aside><div class="ck-head">' +
+      '<button class="pn" id="tab-versions" data-pane="versions">Versions</button>' +
+      '<button class="pn" id="tab-names" data-pane="names">Controls</button>' +
+      '<button id="vs-close" title="Close" aria-label="Close">\u2715</button></div>' +
+      '<div id="vs-list"></div><div id="names"></div></aside></main>'
     );
   }
 
@@ -417,6 +453,7 @@
       lastScreen = screen || screenFromTitle(title) || lastScreen;
       original = text;
       ed.value = text;
+      startVersions(ed.value, title);
       source = from || '';
       get('title').textContent = title ? 'Screen code \u2014 ' + title : 'Screen code';
       doc.title = (title || 'Screen code') + ' \u2014 DynaBoost';
@@ -437,6 +474,114 @@
       clearTimeout(timer);
       timer = setTimeout(check, 200);
     });
+
+    // ---------- versions ----------
+    //
+    // The pane beside the editor, open from the start as in Edit flow. One
+    // list per code loaded - a screen, or a set of controls - so loading
+    // another screen and coming back keeps each one's versions: the code as
+    // loaded - always kept - and the last MAX_SAVED applied to Studio. A click
+    // loads one into the editor; Apply to Studio makes it live.
+    const lists = new Map();
+    let versions = null;
+    const vlist = get('vs-list');
+    const lf = (t) => String(t || '').replace(/\r\n?/g, '\n'); // as the editor holds text
+    const clock = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    function codeKey(text) {
+      const sp = screenParts(text);
+      if (sp && !sp.error) return 'screen:' + sp.name;
+      const names = topNames(text);
+      return names.length ? 'controls:' + names.join(',') : 'code';
+    }
+
+    function startVersions(text, title) {
+      const key = codeKey(text);
+      versions = lists.get(key) || { original: { text: text, at: Date.now() }, saved: [], next: 1, title: title || '' };
+      lists.set(key, versions);
+      renderVersions();
+    }
+
+    function versionOf(key) {
+      if (!versions) return null;
+      if (key === 'o') return { v: versions.original, name: 'The original' };
+      const v = versions.saved.find((x) => 's' + x.n === key);
+      return v && { v: v, name: 'Version ' + v.n };
+    }
+
+    function renderVersions() {
+      if (!versions) {
+        vlist.innerHTML = '<div class="vs-note">The code as loaded shows here, then each Apply to Studio.</div>';
+        get('vs-n').textContent = '';
+        return;
+      }
+      const row = (key, title, v) => {
+        const inStudio = v.text === lf(original);
+        const here = v.text === ed.value;
+        const n = outline(v.text).controls.length;
+        return (
+          '<div class="vs' + (key === 'o' ? ' orig' : '') + (inStudio ? ' live' : '') + (here ? ' here' : '') + '" data-vs="' + key + '" title="Click to load into the editor">' +
+          '<span class="vs-dot"></span><div class="vs-main"><div class="vs-t">' + esc(title) +
+          (inStudio ? '<span class="vs-tag live">in Studio</span>' : '') +
+          (here && !inStudio ? '<span class="vs-tag here">in the editor</span>' : '') +
+          '</div><div class="vs-m">' + esc(clock(v.at)) + ' · ' + n + ' control' + (n === 1 ? '' : 's') + '</div></div></div>'
+        );
+      };
+      const rows = ['<div class="vs-h">' + esc(versions.title || 'This code') + '</div>', row('o', 'Original', versions.original)];
+      versions.saved.slice().reverse().forEach((v) => rows.push(row('s' + v.n, 'Version ' + v.n, v)));
+      rows.push('<div class="vs-note">' + (versions.saved.length ? 'The last ' + MAX_SAVED + ' applied and the code as loaded. ' : 'Each Apply to Studio adds a version here. ') + 'They stay while this tab is open.</div>');
+      vlist.innerHTML = rows.join('');
+      get('vs-n').textContent = versions.saved.length ? String(versions.saved.length) : '';
+    }
+
+    function showPane(name) {
+      doc.body.classList.add('side');
+      doc.body.classList.toggle('pane-versions', name === 'versions');
+      doc.body.classList.toggle('pane-names', name === 'names');
+      get('versions').setAttribute('aria-pressed', String(name === 'versions'));
+      if (name === 'versions') renderVersions();
+    }
+
+    function hidePane() {
+      doc.body.classList.remove('side', 'pane-versions', 'pane-names');
+      get('versions').setAttribute('aria-pressed', 'false');
+    }
+
+    get('versions').addEventListener('click', () => (doc.body.classList.contains('pane-versions') ? hidePane() : showPane('versions')));
+    get('vs-close').addEventListener('click', hidePane);
+    for (const b of doc.querySelectorAll('[data-pane]')) b.addEventListener('click', () => showPane(b.getAttribute('data-pane')));
+
+    // "in the editor" follows the typing
+    let marks = null;
+    ed.addEventListener('input', () => {
+      clearTimeout(marks);
+      marks = setTimeout(renderVersions, 300);
+    });
+
+    vlist.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-vs]');
+      const found = el && versionOf(el.getAttribute('data-vs'));
+      if (!found || found.v.text === ed.value) return;
+      const known = ed.value === lf(original) || versions.saved.concat([versions.original]).some((v) => v.text === ed.value);
+      if (!known && !tab.confirm('Replace your unsaved edit in the editor with ' + found.name.toLowerCase() + '?')) return;
+      ed.value = found.v.text;
+      clearTimeout(timer);
+      check();
+      renderVersions();
+      const label = found.name.replace(/^The /, '').replace(/^./, (c) => c.toUpperCase());
+      setStatus(label + ' is in the editor' + (found.v.text === lf(original) ? ' - the same as in Studio.' : ' - Apply to Studio to make it live.'), false);
+    });
+    renderVersions();
+
+    // Applied code that is neither the original nor the last version is a new one.
+    function addVersion(text) {
+      if (!versions) return;
+      const last = versions.saved[versions.saved.length - 1];
+      if (text === versions.original.text || (last && last.text === text)) return;
+      versions.saved.push({ n: versions.next++, text: text, at: Date.now() });
+      while (versions.saved.length > MAX_SAVED) versions.saved.shift();
+      renderVersions();
+    }
 
     // A paste into an empty editor is the "original" that Revert goes back to.
     ed.addEventListener('paste', () => {
@@ -534,7 +679,11 @@
       showLog(res.log);
       btn.disabled = false;
       if (res.ok) {
+        DynaBoost.saved('canvas-code');
         original = text;
+        // Typed in, never loaded: what went to Studio is where its list starts.
+        if (versions) addVersion(lf(text));
+        else startVersions(lf(text), '');
         source = 'applied';
         lastScreen = res.screen || lastScreen;
         check();
@@ -656,6 +805,7 @@
     when: onStudio,
     type: 'toggle',
     defaultOn: false,
+    countClick: true,
     hint: 'Opens every branch of the tree view',
     icon:
       '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +

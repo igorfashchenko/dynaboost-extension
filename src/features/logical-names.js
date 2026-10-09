@@ -42,8 +42,11 @@
   let wanted = false;
 
   // A fresh helper (one taking over from an older one) knows nothing yet.
+  // A name copied from a badge is a use, for Time saved.
   window.addEventListener('message', (e) => {
-    if (e.source !== window || !e.data || e.data.source !== SRC + '-event' || e.data.type !== 'ready') return;
+    if (e.source !== window || !e.data || e.data.source !== SRC + '-event') return;
+    if (e.data.type === 'name-copied' && wanted) DynaBoost.saved('logical-names');
+    if (e.data.type !== 'ready') return;
     if (wanted) window.postMessage({ source: SRC, op: 'names', on: true, dark: DynaBoost.isDark ? DynaBoost.isDark() : false }, location.origin);
   });
 

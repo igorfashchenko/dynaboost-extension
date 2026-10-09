@@ -62,6 +62,7 @@
   let timer = null;
   let seen = ''; // the page we are on
   let done = ''; // the page "All" was picked on
+  let counted = ''; // the page that was a use, for Time saved
   let tries = 0;
 
   // "All" in its own row of tabs - the nearest parent holding more than it -
@@ -90,6 +91,10 @@
     // A tab that says nothing about itself gets one click; one that does, up
     // to three, in case the first came before the page was listening.
     all.click();
+    if (counted !== location.pathname) {
+      counted = location.pathname;
+      DynaBoost.saved('open-all');
+    }
     if (!readable || ++tries >= 3) done = location.pathname;
     else schedule(600);
   }

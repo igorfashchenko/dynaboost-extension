@@ -123,6 +123,7 @@
     hint: 'Opens every collapsed step of the flow',
     icon: ICON,
     defaultOn: false,
+    countClick: true,
     onEnable() {
       if (observer) return;
       total = 0;

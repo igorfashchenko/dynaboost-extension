@@ -27,6 +27,7 @@
       '_blank',
       'noopener'
     );
+    DynaBoost.saved('system-jobs');
   }
 
   DynaBoost.register({

@@ -30,15 +30,18 @@
     return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
 
-  /* Give up on a request after this long - generous, since a big table's
-   * ribbon takes a while to build. */
+  /* Give up on a request after this long. The ribbon gets longer: a big
+   * table's takes Dynamics minutes to build, and cutting it off means
+   * starting again from nothing. */
   const TIMEOUT = 120000;
+  const RIBBON_TIMEOUT = 300000;
 
-  async function getJson(path, prefer) {
+  async function getJson(path, prefer, timeout) {
     const headers = { Accept: 'application/json', 'OData-Version': '4.0' };
     if (prefer) headers.Prefer = prefer;
     const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), TIMEOUT);
+    const limit = timeout || TIMEOUT;
+    const timer = setTimeout(() => ctl.abort(), limit);
     try {
       const res = await fetch(API + path, { credentials: 'same-origin', headers: headers, signal: ctl.signal });
       if (!res.ok) {
@@ -53,7 +56,7 @@
       }
       return await res.json();
     } catch (e) {
-      if (e.name === 'AbortError') throw new Error('Dynamics did not answer within ' + TIMEOUT / 1000 + ' seconds.');
+      if (e.name === 'AbortError') throw new Error('Dynamics did not answer within ' + Math.round(limit / 60000) + ' minutes.');
       throw e;
     } finally {
       clearTimeout(timer);
@@ -580,22 +583,98 @@
    * at once. A failure is not kept: Try again asks afresh. */
   const cache = new Map();
 
-  async function loadRibbon(entity) {
-    const r = await getJson("RetrieveEntityRibbon(EntityName='" + entity + "',RibbonLocationFilter=Microsoft.Dynamics.CRM.RibbonLocationFilters'All')");
-    return parseRibbon(await unzipXml(r.CompressedEntityXml), entity);
+  /* The last command bars read, per environment and table, also kept in the
+   * browser: the next Form as JSON shows them at once - with when they were
+   * read - while Dynamics builds them again. The zip as Dynamics gave it; the
+   * 5 newest, 14 days. */
+  const KEPT_KEY = 'dynaboost.ribbons';
+  const KEPT_MAX = 5;
+  const KEPT_DAYS = 14;
+  const alive = () => !!(DynaBoost.alive && DynaBoost.alive());
+
+  function keptList() {
+    return new Promise((resolve) => {
+      if (!alive()) return resolve([]);
+      try {
+        chrome.storage.local.get(KEPT_KEY, (d) => resolve(Array.isArray(d && d[KEPT_KEY]) ? d[KEPT_KEY] : []));
+      } catch (e) {
+        resolve([]);
+      }
+    });
   }
 
-  function load(entity) {
+  // Within the browser's room for DynaBoost (10 MB, shared with the rest):
+  // one table's bars up to 2.5 MB, all of them up to 6 MB.
+  const KEPT_ONE = 2.5e6;
+  const KEPT_ALL = 6e6;
+
+  async function keep(entity, zip) {
+    if (!zip || zip.length > KEPT_ONE) return;
+    const host = location.hostname;
+    const since = Date.now() - KEPT_DAYS * 864e5;
+    const list = (await keptList()).filter((k) => k && k.at > since && !(k.host === host && k.entity === entity));
+    list.unshift({ host: host, entity: entity, at: Date.now(), zip: zip });
+    const out = [];
+    let size = 0;
+    for (const k of list.slice(0, KEPT_MAX)) {
+      size += (k.zip || '').length;
+      if (size > KEPT_ALL) break;
+      out.push(k);
+    }
+    if (!alive()) return;
+    try {
+      chrome.storage.local.set({ [KEPT_KEY]: out }).catch(() => {});
+    } catch (e) {
+      /* cut off - nothing kept */
+    }
+  }
+
+  // { at, ribbon } from the last read in this environment, or null.
+  async function kept(entity) {
+    const since = Date.now() - KEPT_DAYS * 864e5;
+    const hit = (await keptList()).find((k) => k && k.host === location.hostname && k.entity === entity && k.at > since);
+    if (!hit) return null;
+    try {
+      return { at: hit.at, ribbon: parseRibbon(await unzipXml(hit.zip), entity) };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function loadRibbon(entity) {
+    const r = await getJson("RetrieveEntityRibbon(EntityName='" + entity + "',RibbonLocationFilter=Microsoft.Dynamics.CRM.RibbonLocationFilters'All')", null, RIBBON_TIMEOUT);
+    const ribbon = parseRibbon(await unzipXml(r.CompressedEntityXml), entity);
+    keep(entity, r.CompressedEntityXml);
+    return ribbon;
+  }
+
+  // The classic command bars (slow) and the modern commands (quick), each on
+  // its own, so the quick one does not wait for the slow one.
+  const modernCache = new Map();
+  function loadModernOnce(entity) {
+    if (!modernCache.has(entity)) {
+      const p = loadModern(entity);
+      modernCache.set(entity, p);
+      p.then((m) => m && m.error && modernCache.delete(entity));
+    }
+    return modernCache.get(entity);
+  }
+
+  function loadClassic(entity) {
     if (!cache.has(entity)) {
       cache.set(
         entity,
-        Promise.all([loadRibbon(entity).catch((e) => ({ error: e.message })), loadModern(entity)]).then(([ribbon, modern]) => {
-          if (ribbon.error || (modern && modern.error)) cache.delete(entity);
-          return { ribbon: ribbon, modern: modern };
+        loadRibbon(entity).catch((e) => {
+          cache.delete(entity);
+          return { error: e.message };
         })
       );
     }
     return cache.get(entity);
+  }
+
+  function load(entity) {
+    return Promise.all([loadClassic(entity), loadModernOnce(entity)]).then(([ribbon, modern]) => ({ ribbon: ribbon, modern: modern }));
   }
 
   // For the JSON: the custom and customized buttons, and the modern commands.
@@ -664,15 +743,30 @@
     );
   }
 
+  // Reading: the busy squares, the seconds, and why it can take long.
+  function waitHtml(again) {
+    return (
+      '<div class="cm-reading">' + DynaBoost.status.html('busy') +
+      '<div><div>' + (again ? 'Reading them again from Dynamics' : 'Reading the table’s command bars from Dynamics') + '\u2026<span id="cm-wait"></span></div>' +
+      '<div class="lg-dim" id="cm-slow" hidden>Dynamics builds them in one go - every button of the table with the changes of every solution - and for a big table that takes a minute or more. Nothing to do: they appear here by themselves, the other views work meanwhile.</div></div></div>'
+    );
+  }
+
   function viewHtml(data, st, clientUrl) {
-    if (!data) {
-      return (
-        '<p class="lg-note">Reading the table’s command bars…<span id="cm-wait"></span></p>' +
-        '<p class="lg-note" id="cm-slow" hidden>Dynamics builds them on request - every button of the table with the changes of every solution - and for a big table that takes a while. They appear here by themselves.</p>'
-      );
+    if (!data || !data.ribbon) {
+      return waitHtml(false) + (data && data.modern ? modernHtml(data.modern, st) : '');
     }
     const parts = [];
     const rb = data.ribbon;
+    if (data.keptAt) {
+      const d = new Date(data.keptAt);
+      const when = d.toDateString() === new Date().toDateString() ? 'today ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      parts.push(
+        '<div class="cm-kept">As read ' + esc(when) + ' - shown at once.' +
+          (data.againError ? ' Reading them again did not work: ' + esc(data.againError) + ' <button type="button" class="cm-retry" data-cmretry>Try again</button>' : waitHtml(true)) +
+          '</div>'
+      );
+    }
     if (rb.error) {
       parts.push('<p class="lg-empty">The command bars could not be read. ' + esc(rb.error) + ' <button type="button" class="cm-retry" data-cmretry>Try again</button></p>');
     } else {
@@ -703,18 +797,19 @@
           (st.loc === 'assoc' ? ' An associated view shows the subgrid’s classic buttons.' : '') + '</p>'
       );
     }
-    const modern = data.modern;
-    parts.push('<h2 class="lg-h">Modern commands <span class="lg-dim">from the command designer</span></h2>');
-    if (!Array.isArray(modern)) parts.push('<p class="lg-note">Modern commands could not be read. ' + esc(modern && modern.error) + '</p>');
-    else {
-      const here = modern.map((a, i) => [a, i]).filter(([a]) => a.loc === st.loc);
-      parts.push(
-        here.length
-          ? '<div class="cm-frame"><div class="cm-bar">' + here.map(([a, i]) => modernTile(a, i)).join('') + '</div></div>'
-          : '<p class="lg-note">None on this bar.</p>'
-      );
-    }
+    parts.push(modernHtml(data.modern, st));
     return parts.join('');
+  }
+
+  function modernHtml(modern, st) {
+    const head = '<h2 class="lg-h">Modern commands <span class="lg-dim">from the command designer</span></h2>';
+    if (!modern) return head + '<p class="lg-note">Reading\u2026</p>';
+    if (!Array.isArray(modern)) return head + '<p class="lg-note">Modern commands could not be read. ' + esc(modern && modern.error) + '</p>';
+    const here = modern.map((a, i) => [a, i]).filter(([a]) => a.loc === st.loc);
+    return (
+      head +
+      (here.length ? '<div class="cm-frame"><div class="cm-bar">' + here.map(([a, i]) => modernTile(a, i)).join('') + '</div></div>' : '<p class="lg-note">None on this bar.</p>')
+    );
   }
 
   function codeLink(lib, fn) {
@@ -897,8 +992,14 @@
 
   const CSS =
     '.cm-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:2px 0 12px}' +
-    '.cm-top label{font-size:13px;color:var(--dbc-fg-56637f);display:flex;align-items:center;gap:5px}' +
-    '.cm-top .seg button{padding:6px 12px}.cm-n{font-size:11.5px;opacity:.7}' +
+    // Reading: the busy squares beside what is read; the kept bars marked as such.
+    '.cm-reading{display:flex;gap:10px;align-items:flex-start;margin:4px 0 12px;font-size:13px;color:var(--dbc-fg-10224e)}' +
+    '.cm-reading .db-st{flex:none;margin-top:1px}.cm-reading .db-st.db-st-busy{margin:1px 0}.cm-reading .lg-dim{margin-top:3px;font-size:12.5px}' +
+    '.cm-kept{margin:0 0 12px;padding:8px 12px;border:1px dashed var(--dbc-bd-c6d0e4);border-radius:8px;font-size:12.5px;color:var(--dbc-fg-56637f)}' +
+    '.cm-kept .cm-reading{margin:6px 0 0}' +
+    '.cm-top label{font-size:13px;color:var(--dbc-fg-56637f);display:flex;align-items:center;gap:6px;cursor:pointer}' +
+    // The same switch as the views above it.
+    '.cm-n{font-size:11.5px;opacity:.7}' +
     '.cm-frame{background:var(--dbc-bg-fff);border:1px solid var(--dbc-bd-dde3f0);border-radius:8px;box-shadow:0 1px 3px rgba(16,34,78,.08);padding:6px}' +
     '.cm-bar{display:flex;flex-wrap:wrap;gap:2px}' +
     '.cm-retry{margin-left:6px;padding:2px 10px;border:1px solid var(--dbc-bd-c9d3e6);border-radius:4px;background:var(--dbc-bg-fff);color:var(--dbc-fg-1e6bff);font:600 12.5px "Segoe UI",system-ui,sans-serif;cursor:pointer}' +
@@ -1054,7 +1155,7 @@
         return;
       }
       const tile = e.target.closest('[data-cm]');
-      if (tile && data && !data.ribbon.error) {
+      if (tile && data && data.ribbon && !data.ribbon.error) {
         const [key, index] = tile.getAttribute('data-cm').split(':');
         openButton(tab, data, key, Number(index), clientUrl);
         return;
@@ -1078,30 +1179,53 @@
       const slow = doc.getElementById('cm-slow');
       if (slow && s >= 8) slow.hidden = false;
     };
+    /* Three reads, each drawn when it is in: the command bars as last read
+     * here (from the browser, at once), the modern commands (quick), and the
+     * command bars from Dynamics (slow) - which replace the kept ones. */
     const start = () => {
       const gen = (tab.__dbCommandsGen = (tab.__dbCommandsGen || 0) + 1);
+      const mine = () => !tab.closed && tab.__dbCommandsGen === gen;
+      const entity = dump.entity.logicalName;
       const t0 = Date.now();
-      data = null;
+      let fresh = false;
+      data = { ribbon: null, modern: null, keptAt: null };
+      const show = () => {
+        if (!mine()) return;
+        if (data.ribbon) {
+          try {
+            logic.commands = compact(data);
+          } catch (e) {
+            data.ribbon = { error: e.message };
+          }
+        }
+        draw();
+        refresh();
+      };
       draw();
       tab.clearInterval(clock);
       clock = tab.setInterval(() => tick(t0), 1000);
-      load(dump.entity.logicalName)
-        .then((d) => {
-          logic.commands = compact(d);
-          if (tab.closed || tab.__dbCommandsGen !== gen) return;
-          data = d;
-        })
-        .catch((e) => {
-          // Only a bug of ours lands here - load() itself never rejects.
-          data = { ribbon: { error: e.message }, modern: [] };
-          logic.commands = compact(data);
-        })
-        .then(() => {
-          if (tab.closed || tab.__dbCommandsGen !== gen) return;
-          tab.clearInterval(clock);
-          draw();
-          refresh();
-        });
+      kept(entity).then((k) => {
+        if (!k || fresh || !mine()) return;
+        data.ribbon = k.ribbon;
+        data.keptAt = k.at;
+        show();
+      });
+      loadModernOnce(entity).then((m) => {
+        if (!mine()) return;
+        data.modern = m;
+        show();
+      });
+      loadClassic(entity).then((rb) => {
+        fresh = true;
+        if (!mine()) return;
+        tab.clearInterval(clock);
+        if (rb.error && data.keptAt) data.againError = rb.error; // the kept ones stay, with why
+        else {
+          data.ribbon = rb;
+          data.keptAt = null;
+        }
+        show();
+      });
     };
     start();
   }

@@ -136,6 +136,7 @@
     if (!host) return;
 
     window.open(buildUrl(host, ctx.solutionId), '_blank', 'noopener');
+    DynaBoost.saved('classic-open');
   }
 
   // Other tiles that open a classic page of the org (Advanced Find) ask for
@@ -150,7 +151,7 @@
     hosts: ['make.powerapps.com'],
     when: () => new RegExp('/solutions/' + GUID, 'i').test(location.pathname),
     type: 'action',
-    hint: 'This solution or table in the classic explorer',
+    hint: 'This solution in the classic solution explorer',
     icon: ICON,
     onRun: run
   });

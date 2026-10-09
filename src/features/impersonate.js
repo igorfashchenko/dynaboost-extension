@@ -191,6 +191,7 @@
       return (r && r.error) || 'DynaBoost could not start it.';
     }
     await remember(user);
+    DynaBoost.saved('impersonate');
     try {
       sessionStorage.removeItem(SEEN_KEY);
     } catch (e) {

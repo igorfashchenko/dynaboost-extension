@@ -136,26 +136,40 @@
     const captured = new Map();
     let stagnant = 0;
     let lastScrollTop = -1;
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-    for (let i = 0; i < 1000; i++) {
-      const rows = getRows(grid);
-      for (const row of rows) {
-        const data = extractRow(row);
-        const key = data.uniqueName || data.displayName || JSON.stringify(data);
-        if (key) captured.set(key, data);
-      }
-      if (onProgress) onProgress(captured.size);
+    // The grid keeps only the rows in view: start from its top, whatever
+    // was scrolled to, and put the view back where it was when done.
+    const startedAt = scrollParent.scrollTop;
+    if (startedAt > 0) {
+      scrollParent.scrollTop = 0;
+      await wait(300);
+    }
+    try {
+      for (let i = 0; i < 1000; i++) {
+        const rows = getRows(grid);
+        for (const row of rows) {
+          const data = extractRow(row);
+          // A row is its whole content where there is no logical name - two
+          // flows or tables may share a display name.
+          const key = data.uniqueName || JSON.stringify(data);
+          if (key !== '{}') captured.set(key, data);
+        }
+        if (onProgress) onProgress(captured.size);
 
-      if (scrollParent.scrollTop === lastScrollTop) {
-        stagnant++;
-        if (stagnant > 3) break;
-      } else {
-        stagnant = 0;
+        if (scrollParent.scrollTop === lastScrollTop) {
+          stagnant++;
+          if (stagnant > 3) break;
+        } else {
+          stagnant = 0;
+        }
+        lastScrollTop = scrollParent.scrollTop;
+        scrollParent.scrollTop += Math.max(200, scrollParent.clientHeight * 0.8);
+        await wait(150);
+        if (scrollParent.scrollTop + scrollParent.clientHeight >= scrollParent.scrollHeight - 2 && stagnant > 0) break;
       }
-      lastScrollTop = scrollParent.scrollTop;
-      scrollParent.scrollTop += Math.max(200, scrollParent.clientHeight * 0.8);
-      await new Promise((r) => setTimeout(r, 150));
-      if (scrollParent.scrollTop + scrollParent.clientHeight >= scrollParent.scrollHeight - 2 && stagnant > 0) break;
+    } finally {
+      scrollParent.scrollTop = startedAt;
     }
 
     return { headers, rows: Array.from(captured.values()) };
@@ -303,6 +317,10 @@
     URL.revokeObjectURL(url);
   }
 
+  const CHECK =
+    '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px">' +
+    '<path d="m5 13 4 4L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
   function buildDialog() {
     const overlay = document.createElement('div');
     overlay.className = 'db-overlay' + (DynaBoost.isDark && DynaBoost.isDark() ? ' db-dark' : '');
@@ -345,16 +363,50 @@
       outputEl.value = md;
 
       const failed = 'Copy did not go through. Select the text and press Ctrl+C.';
-      overlay.querySelector('[data-db="md"]').addEventListener('click', async () => {
+      // The clicked button shows it worked: a tick and green for a moment,
+      // red when the copy did not go through.
+      const flash = (btn, text, ok) => {
+        if (btn.__dbTimer) clearTimeout(btn.__dbTimer);
+        if (btn.__dbLabel == null) btn.__dbLabel = btn.textContent;
+        // Keep its width, so the buttons next to it do not move.
+        if (!btn.style.minWidth) btn.style.minWidth = btn.offsetWidth + 'px';
+        btn.innerHTML = (ok ? CHECK : '') + text;
+        btn.classList.remove('db-ok', 'db-bad');
+        btn.classList.add(ok ? 'db-ok' : 'db-bad');
+        btn.__dbTimer = setTimeout(() => {
+          btn.textContent = btn.__dbLabel;
+          btn.classList.remove('db-ok', 'db-bad');
+          btn.style.minWidth = '';
+        }, 2200);
+      };
+      // One export, however many times it is copied or downloaded.
+      let used = false;
+      const use = (ok) => {
+        if (ok && !used) {
+          used = true;
+          DynaBoost.saved('table-export');
+        }
+        return ok;
+      };
+      overlay.querySelector('[data-db="md"]').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
         outputEl.value = md;
-        statusEl.textContent = (await copyToClipboard(md)) ? 'Copied as Markdown.' : failed;
+        const ok = use(await copyToClipboard(md));
+        statusEl.textContent = ok ? 'Copied as Markdown.' : failed;
+        flash(btn, ok ? 'Copied' : 'Copy failed', ok);
       });
-      overlay.querySelector('[data-db="csv"]').addEventListener('click', async () => {
+      overlay.querySelector('[data-db="csv"]').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
         outputEl.value = csv;
-        statusEl.textContent = (await copyToClipboard(csv)) ? 'Copied as CSV.' : failed;
+        const ok = use(await copyToClipboard(csv));
+        statusEl.textContent = ok ? 'Copied as CSV.' : failed;
+        flash(btn, ok ? 'Copied' : 'Copy failed', ok);
       });
-      overlay.querySelector('[data-db="download"]').addEventListener('click', () => {
+      overlay.querySelector('[data-db="download"]').addEventListener('click', (e) => {
         downloadCSV(csv, fileName);
+        use(true);
+        statusEl.textContent = 'Downloaded ' + fileName + '.';
+        flash(e.currentTarget, 'Downloaded', true);
       });
     } catch (e) {
       statusEl.textContent = e.message;
@@ -370,7 +422,7 @@
     // the canvas Studio or a flow.
     when: () => !/\/canvas\//i.test(location.pathname),
     type: 'action',
-    hint: 'Copy or download this list as Markdown or CSV',
+    hint: 'Copy this list as Markdown or CSV, or download it as CSV',
     icon: ICON,
     onRun: run
   });

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DynaBoost",
-  "version": "2.39",
+  "version": "2.40",
   "description": "Toolbelt for Dynamics 365, Power Apps, Power Automate and Azure DevOps. Toggle features on and off from a side panel.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -76,6 +76,7 @@
       ],
       "js": [
         "src/core.js",
+        "src/time-saved.js",
         "src/theme-table.js",
         "src/code-view.js",
         "src/features/table-export.js",
@@ -96,13 +97,15 @@
         "src/features/form-logic.js",
         "src/features/form-commands.js",
         "src/features/form-dump.js",
+        "src/features/env-compare.js",
         "src/features/form-editor.js",
         "src/features/logical-names.js",
         "src/features/god-mode.js",
         "src/features/copy-record.js",
         "src/features/impersonate.js",
         "src/features/journey.js",
-        "src/features/canvas-code.js"
+        "src/features/canvas-code.js",
+        "src/features/presenting.js"
       ],
       "run_at": "document_start"
     },
@@ -135,6 +138,21 @@
       "world": "MAIN",
       "run_at": "document_start",
       "all_frames": true
+    },
+    {
+      "matches": [
+        "https://make.powerapps.com/*",
+        "https://make.powerautomate.com/*"
+      ],
+      "exclude_matches": [
+        "https://make.powerautomate.com/*/widgets/*",
+        "https://make.powerautomate.com/widgets/*"
+      ],
+      "js": [
+        "src/features/env-list-hook.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
     },
     {
       "matches": [

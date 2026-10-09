@@ -20,6 +20,7 @@
     }
     if (!host) return;
     window.open('https://' + host + '/main.aspx?pagetype=advancedfind', '_blank', 'noopener');
+    DynaBoost.saved('advanced-find');
   }
 
   DynaBoost.register({

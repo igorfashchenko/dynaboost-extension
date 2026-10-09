@@ -150,6 +150,7 @@
     hint: 'Opens every node of the wiki tree',
     icon: ICON,
     defaultOn: false,
+    countClick: true,
     onEnable() {
       if (observer) return;
       session++;

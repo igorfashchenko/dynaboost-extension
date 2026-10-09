@@ -385,24 +385,31 @@
 
 .db-slot-tool {
   position: absolute;
-  top: 3px;
+  top: 2px;
   display: none;
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 16px;
   padding: 0;
   border: 1px solid var(--db-hairline);
-  border-radius: 6px;
+  border-radius: 4px;
   background: #fff;
-  font-size: 13px;
-  line-height: 22px;
-  text-align: center;
+  align-items: center;
+  justify-content: center;
   color: var(--db-ink-soft);
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(16, 34, 78, 0.12);
 }
 
+.db-slot-tool svg {
+  display: block;
+  width: 9px;
+  height: 9px;
+}
+
+/* Both in the top right corner, beside the environment's line - which
+   makes room for them - never over the solution's name. */
 .db-slot-edit {
-  left: 5px;
+  right: 21px;
 }
 
 .db-slot-del {
@@ -411,7 +418,12 @@
 
 .db-slot-full:hover .db-slot-tool,
 .db-slot-full:focus-within .db-slot-tool {
-  display: block;
+  display: flex;
+}
+
+.db-slot-full:hover .db-slot-env,
+.db-slot-full:focus-within .db-slot-env {
+  padding-right: 36px;
 }
 
 /* Both in the app's gold: clear on hover, quiet otherwise. */
@@ -659,7 +671,8 @@
 
 .db-tile {
   position: relative;
-  min-height: 92px;
+  /* As tall as the tallest tile in the panel (core.js: equalTiles). */
+  min-height: var(--db-tile-h, 92px);
   padding: 13px 5px 14px;
   border: 1px solid var(--db-tile-line);
   border-radius: 8px;
@@ -814,6 +827,216 @@
 .db-scope:hover {
   border-color: var(--db-blue);
   color: var(--db-blue);
+}
+
+/* ---------- Arranging ----------
+   The pencil in the footer (core.js, "arranging"): tiles move within their
+   section, sections by their name. Meanwhile the footer holds Reset order
+   and Done, and nothing runs. */
+
+.db-arrange {
+  flex: none;
+  margin-left: auto;
+  width: 31px;
+  height: 31px;
+  padding: 7px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 50%;
+  background: var(--db-surface);
+  color: var(--db-ink-soft);
+}
+
+.db-arrange svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.db-arrange:hover {
+  border-color: var(--db-blue);
+  color: var(--db-blue);
+}
+
+.db-arrange + .db-scope {
+  margin-left: 0;
+}
+
+.db-arrange-reset,
+.db-arrange-done,
+.db-arranging .db-thanks-btn,
+.db-arranging .db-arrange,
+.db-arranging .db-scope {
+  display: none;
+}
+
+.db-arranging .db-arrange-reset,
+.db-arranging .db-arrange-done {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 5px 14px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 20px;
+  background: var(--db-surface);
+  color: var(--db-ink-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.db-arranging .db-arrange-reset:hover:enabled {
+  border-color: var(--db-blue);
+  color: var(--db-blue);
+}
+
+.db-arranging .db-arrange-reset:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.db-arranging .db-arrange-done {
+  margin-left: auto;
+  padding: 5px 20px;
+  border-color: var(--db-blue);
+  background: var(--db-blue);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.db-arranging .db-arrange-done:hover {
+  filter: brightness(1.08);
+}
+
+.db-arrange-reset:focus-visible,
+.db-arrange-done:focus-visible,
+.db-arrange:focus-visible,
+.db-arranging .db-group-name:focus-visible {
+  outline: 2px solid var(--db-blue-soft);
+  outline-offset: 1px;
+}
+
+.db-arrange-note {
+  margin: -4px 0 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--db-blue-tint);
+  color: var(--db-ink);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Six dots: what can be picked up. */
+.db-grip {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  width: 8px;
+  height: 12px;
+  background: radial-gradient(circle, currentColor 1.1px, transparent 1.5px) 0 0 / 4px 4px;
+  color: var(--db-ink-soft);
+  opacity: 0.75;
+}
+
+.db-arranging .db-tile {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.db-arranging .db-tile:hover {
+  border-color: var(--db-blue);
+}
+
+.db-arranging .db-group-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.db-arranging .db-group-name:hover {
+  color: var(--db-ink);
+}
+
+.db-arranging .db-group-name .db-grip {
+  position: static;
+  flex: none;
+}
+
+.db-group-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The place it will land in, dashed. */
+.db-tile.db-drag-src {
+  border: 1px dashed var(--db-blue);
+  background: var(--db-blue-tint);
+  box-shadow: none;
+}
+
+.db-drag-src > *,
+.db-tile.db-drag-src::before,
+.db-tile.db-drag-src::after {
+  visibility: hidden;
+}
+
+.db-group.db-drag-src {
+  border-radius: 6px;
+  outline: 1px dashed var(--db-blue);
+  background: var(--db-blue-tint);
+}
+
+/* What is held, under the pointer. */
+.db-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  margin: 0;
+  pointer-events: none;
+  box-shadow: 0 12px 26px rgba(16, 34, 78, 0.22), 0 2px 6px rgba(16, 34, 78, 0.12);
+}
+
+.db-tile.db-ghost {
+  border-color: var(--db-blue);
+  background: var(--db-tile);
+}
+
+/* A section with its tiles, outside the panel: its own frame, and its name
+   laid out as in the panel. */
+.db-group.db-ghost {
+  padding: 8px 10px 0;
+  border: 1px solid var(--db-blue);
+  border-radius: 8px;
+  background: var(--db-surface);
+  box-sizing: content-box;
+  translate: -11px -9px;
+}
+
+.db-ghost .db-group-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--db-ink);
+}
+
+.db-ghost .db-group-name .db-grip {
+  position: static;
+  flex: none;
+}
+
+.db-ghost .db-grid {
+  margin-bottom: 10px;
+}
+
+.db-dragging,
+.db-dragging * {
+  cursor: grabbing !important;
 }
 
 /* ---------- Say thanks ----------
@@ -992,6 +1215,92 @@
   border-color: var(--db-blue);
   background: var(--db-blue-tint);
   text-decoration: none;
+}
+
+/* Once or Monthly: a two-way switch above the pay button. Monthly puts,
+ * in Crypto's place (it has no monthly), a row of the same size: the amount
+ * a month and how it ends. */
+.db-thanks-seg {
+  display: flex;
+  gap: 2px;
+  margin-top: 10px;
+  padding: 3px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 9px;
+  background: var(--db-surface-sunk);
+}
+
+.db-thanks-seg button {
+  flex: 1;
+  padding: 5px 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--db-ink-soft);
+  font: 600 12.5px "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.db-thanks-seg button:hover {
+  color: var(--db-ink);
+}
+
+.db-thanks-seg button[aria-pressed="true"] {
+  background: var(--db-surface);
+  color: var(--db-ink);
+  box-shadow: 0 1px 3px rgba(16, 34, 78, 0.14);
+}
+
+.db-thanks-plan {
+  display: none;
+  cursor: default;
+}
+
+.db-thanks-plan:hover {
+  border-color: var(--db-hairline);
+  background: var(--db-surface);
+}
+
+.db-thanks-monthly .db-thanks-plan {
+  display: flex;
+}
+
+.db-plan-chips {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.db-plan-chip {
+  min-width: 40px;
+  padding: 3px 8px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 7px;
+  background: var(--db-surface);
+  color: var(--db-ink-soft);
+  font: 600 12.5px "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.db-plan-chip:hover {
+  border-color: var(--db-gold);
+  color: #9a6a12;
+}
+
+/* The amount picked: in the app's gold, as the other gold marks. */
+.db-plan-chip[aria-pressed="true"] {
+  border-color: var(--db-gold);
+  background: #fff7e6;
+  color: #9a6a12;
+}
+
+.db-thanks-monthly .db-thanks-crypto,
+.db-thanks-monthly .db-wallets,
+.db-qr-none .db-thanks-qrbtn,
+.db-qr-none .db-qr {
+  display: none;
 }
 
 /* The main way: navy like the header, with the gold rule under it. */
@@ -1251,6 +1560,21 @@
   text-align: center;
 }
 
+.db-thanks-stripe {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(138, 149, 173, 0.5);
+  text-underline-offset: 2px;
+}
+
+.db-thanks-stripe:hover,
+.db-thanks-stripe:focus-visible {
+  color: #9a6a12;
+  text-decoration-color: currentColor;
+  outline: none;
+}
+
 /* At the bottom of the card: Rate DynaBoost, and who made it - framed rows,
    like the payments above. */
 .db-thanks-links {
@@ -1433,8 +1757,156 @@
   color: var(--db-gold);
 }
 
+/* After an update: the heart's gold dot on the (i) too - What's new is
+   waiting. Its ring is the header's navy, the same in both modes. */
+.db-info-due::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--db-gold);
+  box-shadow: 0 0 0 2px var(--db-navy-800);
+  animation: db-due-head 2s ease-out infinite;
+}
+
+@keyframes db-due-head {
+  0% {
+    box-shadow: 0 0 0 2px var(--db-navy-800), 0 0 0 2px rgba(227, 176, 75, 0.85);
+  }
+  60%,
+  100% {
+    box-shadow: 0 0 0 2px var(--db-navy-800), 0 0 0 10px rgba(227, 176, 75, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-info-due::after {
+    animation: none;
+  }
+}
+
 .db-info + .db-theme {
   margin-left: 0;
+}
+
+/* The three buttons sit together, a little narrower (the icons keep their
+   size); Time saved takes the room. */
+.db-head:has(.db-saved) {
+  gap: 10px;
+  padding-right: 9px;
+}
+
+.db-head:has(.db-saved) :is(.db-info, .db-theme, .db-close) {
+  width: 26px;
+}
+
+.db-head:has(.db-saved) .db-info {
+  padding: 5px 4px;
+}
+
+.db-head:has(.db-saved) .db-theme {
+  padding: 6px 5px;
+}
+
+.db-head .db-info + .db-theme,
+.db-head .db-theme + .db-close {
+  margin-left: -10px;
+}
+
+/* ---------- Time saved ----------
+   A slim capsule in the header with a thin gold frame: the number, then the
+   unit in gold (time-saved.js). A new value rolls in from below and the frame
+   lights up for a moment. The header is navy in both modes, so it needs no
+   dark twin. */
+
+/* The name never wraps; the room left goes between it and the capsule. */
+.db-head-text {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.db-head:has(.db-saved) .db-head-text {
+  margin-right: auto;
+}
+
+.db-head .db-saved {
+  margin: 0 -5px;
+}
+
+.db-head .db-saved + .db-info {
+  margin-left: 0;
+}
+
+.db-saved {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid rgba(227, 176, 75, 0.5);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: default;
+  transition: border-color 0.6s, box-shadow 0.6s;
+}
+
+.db-saved.db-saved-glow {
+  border-color: var(--db-gold);
+  box-shadow: 0 0 0 3px rgba(227, 176, 75, 0.22);
+}
+
+.db-saved-n {
+  position: relative;
+  display: inline-block;
+  height: 18px;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  color: #eef3ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.db-saved-n > i {
+  display: block;
+  font-style: normal;
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s;
+}
+
+.db-saved-n > i.db-saved-out {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  transform: translateY(-100%);
+  opacity: 0;
+}
+
+.db-saved-n > i.db-saved-in {
+  transform: translateY(100%);
+  opacity: 0;
+}
+
+.db-saved-u {
+  /* On the number's baseline, not its middle. */
+  position: relative;
+  top: 1px;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 18px;
+  letter-spacing: 0.2px;
+  color: var(--db-gold);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-saved,
+  .db-saved-n > i {
+    transition-duration: 0.01s;
+  }
 }
 
 #dynaboost-root.db-dark {
@@ -1494,11 +1966,20 @@
 #dynaboost-root.db-dark .db-slot-full:hover,
 #dynaboost-root.db-dark .db-slot-full:focus-visible {
   border-color: #3a4a72;
+  border-left-color: var(--db-gold);
   background: #18223d;
 }
 
 #dynaboost-root.db-dark .db-tile-toggle[aria-pressed="true"] {
   color: var(--db-ink);
+}
+
+#dynaboost-root.db-dark .db-arranging .db-arrange-done {
+  color: #ffffff;
+}
+
+#dynaboost-root.db-dark .db-ghost {
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 #dynaboost-root.db-dark .db-ctx-copied .db-ctx-copy,
@@ -1528,6 +2009,11 @@
   color: #f0c774;
 }
 
+#dynaboost-root.db-dark .db-thanks-stripe:hover,
+#dynaboost-root.db-dark .db-thanks-stripe:focus-visible {
+  color: #f0c774;
+}
+
 #dynaboost-root.db-dark .db-slot-tool {
   background: var(--db-surface);
 }
@@ -1542,6 +2028,20 @@
 #dynaboost-root.db-dark .db-thanks-open .db-thanks-btn {
   border-color: #6b2a38;
   background: #2a1520;
+}
+
+#dynaboost-root.db-dark .db-plan-chip:hover,
+#dynaboost-root.db-dark .db-plan-chip[aria-pressed="true"] {
+  color: #f0c66e;
+}
+
+#dynaboost-root.db-dark .db-plan-chip[aria-pressed="true"] {
+  background: #3a2e12;
+}
+
+#dynaboost-root.db-dark .db-thanks-seg button[aria-pressed="true"] {
+  background: var(--db-tile);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 #dynaboost-root.db-dark .db-thanks-in {
@@ -1589,6 +2089,20 @@
   border-color: #1e6bff;
   background: #1e6bff;
   color: #fff;
+}
+
+.db-overlay.db-dark .db-dialog-actions button.db-ok,
+.db-overlay.db-dark .db-dialog-actions button.db-ok:hover {
+  border-color: #4cc27a;
+  background: #123322;
+  color: #4cc27a;
+}
+
+.db-overlay.db-dark .db-dialog-actions button.db-bad,
+.db-overlay.db-dark .db-dialog-actions button.db-bad:hover {
+  border-color: #ff7b7b;
+  background: #3a1616;
+  color: #ff7b7b;
 }
 
 /* ---------- Export dialog ---------- */
@@ -1745,14 +2259,971 @@
   color: #fff;
 }
 
+.db-dialog-actions button.db-ok,
+.db-dialog-actions button.db-ok:hover {
+  border-color: #1c6b32;
+  background: #e4f4e8;
+  color: #1c6b32;
+}
+
+.db-dialog-actions button.db-bad,
+.db-dialog-actions button.db-bad:hover {
+  border-color: #a11a1a;
+  background: #fde8e8;
+  color: #a11a1a;
+}
+
 .db-dialog-actions button:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
+/* ---------- Edit form / Open table: pick a solution ----------
+   A row per solution it is in: name, kind and version, the arrow it opens
+   with; the managed ones folded under a line of their own. */
+
+.db-dialog.db-solpick {
+  width: 480px;
+  max-width: calc(100% - 32px);
+  max-height: 80%;
+  overflow: auto;
+  font-size: 13.5px;
+}
+
+.db-sp-busy {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0 4px;
+  color: #56637f;
+}
+
+.db-sp-note {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #56637f;
+}
+
+.db-sp-note.db-sp-bad {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #fde8e8;
+  color: #7a1414;
+}
+
+.db-sp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.db-sp-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 8px 30px 8px 11px;
+  border: 1px solid #dde3f0;
+  border-left: 3px solid #1e6bff;
+  border-radius: 7px;
+  background: #fff;
+  color: #10224e;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-sp-row:hover,
+.db-sp-row:focus-visible {
+  border-color: #1e6bff;
+  background: #f5f7fc;
+  outline: none;
+}
+
+.db-sp-row.db-sp-default {
+  border-left-color: #e3b04b;
+}
+
+.db-sp-row.db-sp-managed {
+  border-left-color: #c6d0e4;
+  color: #56637f;
+}
+
+.db-sp-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.db-sp-meta {
+  font-size: 12px;
+  color: #56637f;
+  word-break: break-word;
+}
+
+.db-sp-tag {
+  padding: 0 7px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.db-sp-pin {
+  background: #fff7e6;
+  color: #7a5410;
+}
+
+.db-sp-go {
+  position: absolute;
+  top: 50%;
+  right: 11px;
+  transform: translateY(-50%);
+  color: #1e6bff;
+}
+
+.db-sp-more {
+  margin-top: 10px;
+}
+
+.db-sp-more summary {
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  color: #56637f;
+  cursor: pointer;
+}
+
+.db-overlay.db-dark .db-sp-busy,
+.db-overlay.db-dark .db-sp-note,
+.db-overlay.db-dark .db-sp-meta,
+.db-overlay.db-dark .db-sp-more summary,
+.db-overlay.db-dark .db-sp-row.db-sp-managed {
+  color: #9aa8c7;
+}
+
+.db-overlay.db-dark .db-sp-note.db-sp-bad {
+  background: #3a1616;
+  color: #ffb3b3;
+}
+
+.db-overlay.db-dark .db-sp-row {
+  border-color: #26324f;
+  border-left-color: #4d8dff;
+  background: #18223d;
+  color: #e3e9f7;
+}
+
+.db-overlay.db-dark .db-sp-row:hover,
+.db-overlay.db-dark .db-sp-row:focus-visible {
+  border-color: #4d8dff;
+  background: #1e2a4a;
+}
+
+.db-overlay.db-dark .db-sp-row.db-sp-default {
+  border-left-color: #e3b04b;
+}
+
+.db-overlay.db-dark .db-sp-row.db-sp-managed {
+  border-left-color: #3a4a72;
+}
+
+.db-overlay.db-dark .db-sp-pin {
+  background: #3a2e12;
+  color: #f0c66e;
+}
+
+.db-overlay.db-dark .db-sp-go {
+  color: #6aa2ff;
+}
+
 /* ---------- Impersonate dialog ----------
    A search over the environment's users: favorites and recent ones first, a
    row per user with initials, name, email, business unit and a star. */
+
+/* ---------- Compare with... / Compare records dialogs ----------
+   The Impersonate dialog's search and rows, plus the record ids, the
+   "Ask before opening a tab in the background" switch and the question
+   asked before such a tab opens. */
+
+.db-dialog.db-imp.db-cmp {
+  width: 540px;
+}
+
+/* The steps, as a small vertical process: a dot per step on one line, the
+   line blue past a step that is done. */
+.db-cmp-flow {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.db-cmp-st {
+  position: relative;
+  display: grid;
+  grid-template-columns: 14px 66px minmax(0, 1fr);
+  column-gap: 10px;
+  min-height: 0;
+  padding-bottom: 14px;
+}
+
+.db-cmp-st::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 19px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: #dde3f0;
+}
+
+.db-cmp-st.db-cmp-last {
+  flex: 1;
+  padding-bottom: 0;
+}
+
+.db-cmp-st.db-cmp-last::before {
+  display: none;
+}
+
+.db-cmp-st.db-cmp-done::before {
+  background: #1e6bff;
+}
+
+.db-cmp-dot {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  box-sizing: border-box;
+  border: 2px solid #c6d0e4;
+  border-radius: 50%;
+  background: #fff;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.db-cmp-done .db-cmp-dot {
+  border-color: #1e6bff;
+  background: #1e6bff;
+  box-shadow: inset 0 0 0 2px #fff;
+}
+
+.db-cmp-k {
+  padding-top: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #56637f;
+}
+
+.db-cmp-v {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.db-cmp-here {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.db-cmp-sub {
+  margin-top: -5px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #56637f;
+}
+
+.db-cmp-seg {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid #c6d0e4;
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.db-cmp-seg button {
+  padding: 6px 14px;
+  border: none;
+  background: #fff;
+  color: #10224e;
+  font: 13px "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.db-cmp-seg button + button {
+  border-left: 1px solid #c6d0e4;
+}
+
+.db-cmp-seg button[aria-pressed="true"] {
+  background: #10224e;
+  color: #fff;
+}
+
+.db-cmp-seg button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.db-cmp-rec {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.db-cmp-rec[hidden] {
+  display: none;
+}
+
+.db-cmp .db-imp-list {
+  max-height: 34vh;
+}
+
+.db-overlay.db-dark .db-cmp-st::before {
+  background: #26324f;
+}
+
+.db-overlay.db-dark .db-cmp-st.db-cmp-done::before {
+  background: #4d8dff;
+}
+
+.db-overlay.db-dark .db-cmp-dot {
+  border-color: #34436a;
+  background: #121a2f;
+}
+
+.db-overlay.db-dark .db-cmp-done .db-cmp-dot {
+  border-color: #4d8dff;
+  background: #4d8dff;
+  box-shadow: inset 0 0 0 2px #121a2f;
+}
+
+.db-overlay.db-dark .db-cmp-k,
+.db-overlay.db-dark .db-cmp-sub {
+  color: #9aa8c7;
+}
+
+.db-overlay.db-dark .db-cmp-seg,
+.db-overlay.db-dark .db-cmp-seg button + button {
+  border-color: #34436a;
+}
+
+.db-overlay.db-dark .db-cmp-seg button {
+  background: #121a2f;
+  color: #e3e9f7;
+}
+
+.db-overlay.db-dark .db-cmp-seg button[aria-pressed="true"] {
+  background: #2c4a8a;
+  color: #fff;
+}
+
+.db-cmp-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #56637f;
+}
+
+.db-cmp-field span {
+  flex: none;
+  width: 92px;
+}
+
+.db-cmp-field input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #c6d0e4;
+  border-radius: 7px;
+  background: #fff;
+  color: #10224e;
+  font: 13px ui-monospace, Consolas, monospace;
+  outline: none;
+}
+
+.db-cmp-field input:focus {
+  border-color: #1e6bff;
+  box-shadow: 0 0 0 1px #1e6bff;
+}
+
+.db-cmp-tag {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: #eef2f9;
+  color: #56637f;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.db-cmp-empty {
+  padding: 4px 8px 6px;
+}
+
+/* The status icons (DynaBoost.status, code-view.js) in dialogs over the page:
+ * the tab colours they are written in. */
+.db-overlay {
+  --dbc-fg-e3b04b: #e3b04b;
+  --dbc-fg-1c9b4a: #1c9b4a;
+  --dbc-fg-c42b1c: #c42b1c;
+  --dbc-fg-fde8e8: #fde8e8;
+  --dbc-fg-c6d0e4: #c6d0e4;
+}
+
+/* Your environments: how the list stands, and the button that reads it. */
+.db-cmp-fetch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 9px 10px 9px 12px;
+  border: 1px solid #dde3f0;
+  border-radius: 8px;
+  background: #f7f9fd;
+}
+
+.db-cmp-fetch[hidden] {
+  display: none;
+}
+
+.db-cmp-fetch-none,
+.db-cmp-fetch-busy {
+  border-color: #b9cdf5;
+  background: #eef4ff;
+}
+
+.db-cmp-fetch-bad {
+  border-color: #f2c4c4;
+  background: #fdf3f3;
+}
+
+.db-cmp-fetch .db-st {
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+.db-cmp-fetch .db-st.db-st-busy {
+  width: 40px;
+  height: 26px;
+  margin: 0 -4px 0 -2px;
+}
+
+.db-cmp-fetch-t {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #56637f;
+}
+
+.db-cmp-fetch-t b {
+  font-size: 13px;
+  font-weight: 600;
+  color: #10224e;
+}
+
+.db-cmp-fetch-t [data-db="secs"] {
+  font-weight: 400;
+  color: #56637f;
+  font-variant-numeric: tabular-nums;
+}
+
+.db-cmp-get {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid #1e6bff;
+  border-radius: 7px;
+  background: #fff;
+  color: #1e6bff;
+  font: 600 12.5px "Segoe UI", system-ui, sans-serif;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.db-cmp-get svg {
+  width: 14px;
+  height: 14px;
+}
+
+.db-cmp-get:hover {
+  background: #e9f1ff;
+}
+
+.db-cmp-get:active {
+  transform: translateY(1px);
+}
+
+.db-cmp-get:focus-visible {
+  outline: 2px solid #1e6bff;
+  outline-offset: 2px;
+}
+
+.db-cmp-get.db-cmp-get-main {
+  background: #1e6bff;
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(30, 107, 255, 0.35);
+}
+
+.db-cmp-get.db-cmp-get-main:hover {
+  background: #1557d6;
+  border-color: #1557d6;
+}
+
+.db-cmp-get[data-db="stop"] {
+  border-color: #c6d0e4;
+  color: #10224e;
+}
+
+.db-cmp-get[data-db="stop"]:hover {
+  border-color: #c42b1c;
+  background: #fdf3f3;
+  color: #a11a1a;
+}
+
+.db-cmp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.db-cmp-foot span {
+  cursor: help;
+}
+
+/* A small question: the smaller spiral, as in the panel's header. */
+.db-dialog.db-cmp-ask::after {
+  width: 150px;
+  height: 93px;
+  opacity: 0.3;
+}
+
+.db-dialog.db-cmp-ask {
+  width: 440px;
+  max-width: calc(100% - 32px);
+  font-size: 13.5px;
+  line-height: 1.45;
+  gap: 10px;
+}
+
+.db-cmp-text b {
+  font-weight: 600;
+}
+
+.db-cmp-dim {
+  font-size: 12.5px;
+  color: #56637f;
+}
+
+.db-cmp-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  margin-left: auto;
+  font-size: 13px;
+  color: #10224e;
+  cursor: help;
+}
+
+.db-cmp-check input {
+  margin: 0;
+  cursor: pointer;
+}
+
+.db-overlay.db-dark .db-cmp-field,
+.db-overlay.db-dark .db-cmp-dim {
+  color: #9aa8c7;
+}
+
+.db-overlay.db-dark .db-cmp-field input {
+  border-color: #26324f;
+  background: #0c1325;
+  color: #e3e9f7;
+}
+
+.db-overlay.db-dark .db-cmp-field input:focus {
+  border-color: #4d8dff;
+  box-shadow: 0 0 0 1px #4d8dff;
+}
+
+.db-overlay.db-dark .db-cmp-tag {
+  background: #1a2440;
+  color: #9aa8c7;
+}
+
+.db-overlay.db-dark {
+  --dbc-fg-1c9b4a: #4cc27a;
+  --dbc-fg-c42b1c: #ff7b7b;
+  --dbc-fg-fde8e8: #3a1616;
+  --dbc-fg-c6d0e4: #34436a;
+}
+
+.db-overlay.db-dark .db-cmp-fetch {
+  border-color: #26324f;
+  background: #0f172b;
+}
+
+.db-overlay.db-dark .db-cmp-fetch-none,
+.db-overlay.db-dark .db-cmp-fetch-busy {
+  border-color: #2f55a8;
+  background: #13234a;
+}
+
+.db-overlay.db-dark .db-cmp-fetch-bad {
+  border-color: #6b2a2a;
+  background: #2a1414;
+}
+
+.db-overlay.db-dark .db-cmp-fetch-t,
+.db-overlay.db-dark .db-cmp-fetch-t [data-db="secs"] {
+  color: #9aa8c7;
+}
+
+.db-overlay.db-dark .db-cmp-fetch-t b {
+  color: #e3e9f7;
+}
+
+.db-overlay.db-dark .db-cmp-get {
+  border-color: #4d8dff;
+  background: #121a2f;
+  color: #6aa2ff;
+}
+
+.db-overlay.db-dark .db-cmp-get:hover {
+  background: #1a2a52;
+}
+
+.db-overlay.db-dark .db-cmp-get:focus-visible {
+  outline-color: #6aa2ff;
+}
+
+.db-overlay.db-dark .db-cmp-get.db-cmp-get-main {
+  background: #2f6bff;
+  border-color: #2f6bff;
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.db-overlay.db-dark .db-cmp-get.db-cmp-get-main:hover {
+  background: #4d8dff;
+  border-color: #4d8dff;
+}
+
+.db-overlay.db-dark .db-cmp-get[data-db="stop"] {
+  border-color: #34436a;
+  color: #e3e9f7;
+}
+
+.db-overlay.db-dark .db-cmp-get[data-db="stop"]:hover {
+  border-color: #ff7b7b;
+  background: #2a1414;
+  color: #ff7b7b;
+}
+
+.db-overlay.db-dark .db-cmp-check {
+  color: #e3e9f7;
+}
+
+/* ---------- Presenting window ---------- */
+
+.db-dialog.db-pr {
+  width: 440px;
+  max-width: calc(100% - 32px);
+  max-height: 90%;
+  overflow-y: auto;
+  font-size: 13.5px;
+  gap: 10px;
+}
+
+.db-pr-lead {
+  margin-top: -4px;
+  color: #56637f;
+  font-size: 13px;
+}
+
+.db-pr-tool {
+  padding: 10px 12px;
+  border: 1px solid #dde3f0;
+  border-radius: 10px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.db-pr-tool.db-pr-rec {
+  border-color: #1e6bff;
+  box-shadow: 0 0 0 3px rgba(30, 107, 255, 0.12);
+}
+
+.db-pr-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.db-pr-ic svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+}
+
+.db-pr-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.db-pr-name b {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.db-pr-name span {
+  color: #56637f;
+  font-size: 12.5px;
+}
+
+.db-pr-switch {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 11px;
+  background: #c9d2e3;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+
+.db-pr-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(16, 34, 78, 0.3);
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.db-pr-switch[aria-checked="true"] {
+  background: #1e6bff;
+}
+
+.db-pr-switch[aria-checked="true"]::after {
+  transform: translateX(16px);
+}
+
+.db-pr-switch:focus-visible,
+.db-pr-edit:focus-visible {
+  outline: 2px solid #3d8bff;
+  outline-offset: 2px;
+}
+
+.db-pr-keys,
+.db-pr-size {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0 34px;
+  transition: opacity 0.15s;
+}
+
+.db-pr-label {
+  width: 34px;
+  color: #56637f;
+  font-size: 12px;
+}
+
+.db-pr-combo {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 24px;
+}
+
+.db-pr-combo kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 0 6px;
+  border: 1px solid #c6d0e4;
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: #f5f7fc;
+  color: #10224e;
+  font: 600 12px/20px "Segoe UI", system-ui, sans-serif;
+  text-align: center;
+}
+
+.db-pr-combo i {
+  color: #8a95ad;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.db-pr-combo em {
+  color: #1e6bff;
+  font-size: 12.5px;
+  font-style: normal;
+  animation: db-pr-blink 1.1s ease-in-out infinite;
+}
+
+@keyframes db-pr-blink {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.db-pr-edit {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #dde3f0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #56637f;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.db-pr-edit svg {
+  width: 15px;
+  height: 15px;
+}
+
+.db-pr-edit:hover,
+.db-pr-rec .db-pr-edit {
+  border-color: #1e6bff;
+  color: #1e6bff;
+}
+
+.db-pr-live {
+  margin-left: auto;
+  color: #1c9b4a;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.db-pr-size input {
+  flex: 1;
+  accent-color: #1e6bff;
+}
+
+.db-pr-note {
+  margin: 6px 0 0 34px;
+  color: #c62f4b;
+  font-size: 12.5px;
+}
+
+.db-pr-note:empty {
+  display: none;
+}
+
+.db-pr-off .db-pr-keys,
+.db-pr-off .db-pr-size {
+  opacity: 0.5;
+}
+
+.db-pr-foot {
+  color: #8a95ad;
+  font-size: 12px;
+  text-align: center;
+}
+
+.db-overlay.db-dark .db-pr-lead,
+.db-overlay.db-dark .db-pr-name span,
+.db-overlay.db-dark .db-pr-label {
+  color: #9aa8c7;
+}
+
+.db-overlay.db-dark .db-pr-tool {
+  border-color: #26324f;
+}
+
+.db-overlay.db-dark .db-pr-tool.db-pr-rec {
+  border-color: #4d8dff;
+  box-shadow: 0 0 0 3px rgba(77, 141, 255, 0.18);
+}
+
+.db-overlay.db-dark .db-pr-switch {
+  background: #3a4a72;
+}
+
+.db-overlay.db-dark .db-pr-switch::after {
+  background: #e3e9f7;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.db-overlay.db-dark .db-pr-switch[aria-checked="true"] {
+  background: #4d8dff;
+}
+
+.db-overlay.db-dark .db-pr-combo kbd {
+  border-color: #34436a;
+  background: #0c1325;
+  color: #e3e9f7;
+}
+
+.db-overlay.db-dark .db-pr-combo i,
+.db-overlay.db-dark .db-pr-foot {
+  color: #7d8aa8;
+}
+
+.db-overlay.db-dark .db-pr-combo em {
+  color: #6aa2ff;
+}
+
+.db-overlay.db-dark .db-pr-edit {
+  border-color: #34436a;
+  background: #121a2f;
+  color: #9aa8c7;
+}
+
+.db-overlay.db-dark .db-pr-edit:hover,
+.db-overlay.db-dark .db-pr-rec .db-pr-edit {
+  border-color: #4d8dff;
+  color: #6aa2ff;
+}
+
+.db-overlay.db-dark .db-pr-live {
+  color: #4cc27a;
+}
+
+.db-overlay.db-dark .db-pr-note {
+  color: #ff7b7b;
+}
+
+.db-overlay.db-dark .db-pr-size input {
+  accent-color: #4d8dff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-pr-combo em {
+    animation: none;
+  }
+}
 
 .db-dialog.db-imp {
   width: 460px;

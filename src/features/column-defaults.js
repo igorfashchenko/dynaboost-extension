@@ -68,7 +68,10 @@
         const rule = RULES.find((r) => r.labels.some((l) => label === l || label.startsWith(l)));
         if (!rule) continue;
         handled.add(box);
-        if (isChecked(box) !== rule.checked) box.click();
+        if (isChecked(box) !== rule.checked) {
+          box.click();
+          DynaBoost.saved('column-defaults');
+        }
       }
     }
   }

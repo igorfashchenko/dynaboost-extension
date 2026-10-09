@@ -45,20 +45,18 @@
     };
   }
 
+  // Only open is wrapped, not send - see env-list-hook.js: a wrapped send
+  // puts DynaBoost on the stack of every request the page makes.
   const origOpen = XMLHttpRequest.prototype.open;
-  const origSend = XMLHttpRequest.prototype.send;
 
   XMLHttpRequest.prototype.open = function (method, url) {
     this.__dbUrl = url;
-    return origOpen.apply(this, arguments);
-  };
-
-  XMLHttpRequest.prototype.send = function () {
     try {
-      if (this.__dbUrl && RUN_RE.test(this.__dbUrl)) {
+      if (url && RUN_RE.test(url) && !this.__dbListening) {
+        this.__dbListening = true;
         this.addEventListener('load', () => {
           try {
-            forward(this.__dbUrl, this.responseText);
+            if (this.__dbUrl && RUN_RE.test(this.__dbUrl)) forward(this.__dbUrl, this.responseText);
           } catch (e) {
             /* ignore */
           }
@@ -67,6 +65,6 @@
     } catch (e) {
       /* ignore */
     }
-    return origSend.apply(this, arguments);
+    return origOpen.apply(this, arguments);
   };
 })();

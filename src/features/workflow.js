@@ -12,6 +12,10 @@
  * x:Class is set to XrmWorkflow + the id without dashes. The XAML is not
  * validated - activation does that. Editing `xaml` directly is not
  * documented by Microsoft: for development environments.
+ *
+ * Versions, for the tab: the XAML as opened - always kept - and the last 5
+ * saves; a click loads one into the editor. Closing the tab with an unsaved
+ * edit asks first.
  */
 (function () {
   const ICON =
@@ -24,6 +28,7 @@
   const GUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
   const X_NS = 'http://schemas.microsoft.com/winfx/2006/xaml';
   const API = '/api/data/v9.2/';
+  const MAX_SAVED = 5; // versions in the tab, besides the original
 
   // ---------- finding the workflow ----------
 
@@ -677,10 +682,32 @@
       '.line{margin:2px 0 2px 14px;padding:4px 10px;background:var(--dbc-bg-fff);border:1px solid var(--dbc-bd-dde3f0);' +
       'border-radius:6px;display:inline-block;font:13px ui-monospace,Consolas,monospace}' +
       '.line.verb{border-color:var(--dbc-bd-e3b04b);background:var(--dbc-bg-fffaf0)}' +
+      '.sep{width:1px;align-self:stretch;margin:2px 4px;background:var(--dbc-bg-dde3f0)}' +
+      'body.view-steps .sep{display:none}' +
+      '.nb{display:inline-block;min-width:18px;margin-left:4px;padding:0 5px;border-radius:9px;background:var(--dbc-bg-eef2f9);color:var(--dbc-fg-56637f);font-size:11px;line-height:17px;text-align:center}.nb:empty{display:none}' +
+      // Versions: the pane beside the XAML, as in the flow editor
+      '#xwrap{display:none;flex:1;min-height:0}body.view-xaml #xwrap{display:flex}' +
+      'aside{flex:none;width:340px;display:none;flex-direction:column;min-height:0;margin:14px 22px 18px 0;border:1px solid var(--dbc-bd-dde3f0);border-radius:8px;background:var(--dbc-bg-fff)}' +
+      'body.side aside{display:flex}' +
+      '.ck-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--dbc-bd-dde3f0);font-weight:600}' +
+      '.pn{padding:4px 10px;border-radius:6px;background:var(--dbc-bg-e9f1ff);color:var(--dbc-fg-10224e);font-size:13px}' +
+      '.ck-head button{margin-left:auto;padding:2px 8px;border:none;background:none;color:var(--dbc-fg-56637f);font-size:15px;line-height:1}' +
+      '.ck-head button:hover{background:var(--dbc-bg-f5f7fc);color:var(--dbc-fg-10224e)}' +
+      '.ck-list{flex:1;overflow:auto;padding:6px 0}' +
+      '.vs-h{padding:10px 14px 4px;font-size:12px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;color:var(--dbc-fg-56637f)}' +
+      '.vs{display:flex;align-items:flex-start;gap:10px;margin:4px 10px;padding:8px 10px;border:1px solid var(--dbc-bd-e3e8f2);border-radius:6px;background:var(--dbc-bg-fff);cursor:pointer;transition:border-color .15s,background .15s}' +
+      '.vs:hover{border-color:var(--dbc-bd-1e6bff);background:var(--dbc-bg-f7faff)}' +
+      '.vs.orig{border-left:3px solid var(--dbc-bd-e3b04b)}.vs.here{box-shadow:0 0 0 2px var(--dbc-bd-1e6bff) inset}.vs.orig.live{background:var(--dbc-bg-fffaf0)}' +
+      '.vs-dot{flex:none;width:9px;height:9px;margin-top:6px;border-radius:50%;background:var(--dbc-bg-c6d0e4)}' +
+      '.vs.live .vs-dot{background:var(--dbc-bg-1c9b4a)}.vs.orig .vs-dot{background:var(--dbc-bg-e3b04b)}' +
+      '.vs-main{flex:1;min-width:0}.vs-t{font-weight:600;font-size:13px}.vs-m{font-size:12px;color:var(--dbc-fg-56637f)}' +
+      '.vs-tag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:8px;font-size:11px;font-weight:600;vertical-align:1px}' +
+      '.vs-tag.live{background:var(--dbc-bg-e4f4e8);color:var(--dbc-fg-1c6b32)}.vs-tag.here{background:var(--dbc-bg-e9f1ff);color:var(--dbc-fg-1e4fb8)}' +
+      '.vs-note{padding:6px 14px 8px;font-size:12px;color:var(--dbc-fg-8a95ad)}' +
       DynaBoost.code.css +
       DynaBoost.tabCss +
       '</style>' +
-      '<body class="view-steps">' +
+      '<body class="view-steps side">' +
       '<header><h1>' + esc(wf.name) + '</h1>' +
       '<div class="grid">' + rows + '</div>' +
       (wf.description ? '<div class="desc">' + esc(wf.description) + '</div>' : '') +
@@ -700,10 +727,14 @@
       '<button class="only-xaml" id="backup">Download backup</button>' +
       '<button class="only-xaml" id="copy-xaml">Copy XAML</button>' +
       '<button class="only-xaml" id="reload">Reload from Dataverse</button>' +
+      '<span class="sep"></span>' +
+      '<button class="only-xaml" id="versions" aria-pressed="true" title="The XAML as opened and your saves - click one to load it">Versions<span class="nb" id="vs-n"></span></button>' +
       '<span class="status" id="status"></span>' +
       '</div></header>' +
       '<div id="steps"><main id="steps-main"></main></div>' +
-      '<textarea id="ed" spellcheck="false"' + (blocked ? ' readonly' : '') + '></textarea>'
+      '<div id="xwrap"><textarea id="ed" spellcheck="false"' + (blocked ? ' readonly' : '') + '></textarea>' +
+      '<aside><div class="ck-head"><span class="pn">Versions</span><button id="vs-close" title="Close" aria-label="Close">\u2715</button></div>' +
+      '<div class="ck-list" id="vs-list"></div></aside></div>'
     );
   }
 
@@ -738,7 +769,8 @@
     }
 
     function show(view) {
-      doc.body.className = 'view-' + view;
+      doc.body.classList.remove('view-steps', 'view-xaml');
+      doc.body.classList.add('view-' + view);
       get('v-steps').setAttribute('aria-pressed', String(view === 'steps'));
       get('v-xaml').setAttribute('aria-pressed', String(view === 'xaml'));
       if (view === 'steps') {
@@ -750,6 +782,96 @@
 
     get('v-steps').addEventListener('click', () => show('steps'));
     get('v-xaml').addEventListener('click', () => show('xaml'));
+
+    // ---------- versions ----------
+    //
+    // The pane beside the XAML, open from the start as in Edit flow: the XAML
+    // as opened - always kept - and the last MAX_SAVED saves of this tab. A
+    // click loads one into the editor; Save to Dataverse makes it live.
+
+    // Compared as the editor holds text: a textarea turns \r\n into \n.
+    const lf = (t) => String(t || '').replace(/\r\n?/g, '\n');
+    const live = () => lf(ctx.wf.xaml); // what is in Dataverse
+    const versions = { original: { text: lf(ctx.original), at: Date.now() }, saved: [], next: 1 };
+    const list = get('vs-list');
+    const kb = (t) => Math.max(1, Math.round(t.length / 1024)) + ' KB';
+    const clock = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    function versionOf(key) {
+      if (key === 'o') return { v: versions.original, name: 'The original' };
+      const v = versions.saved.find((x) => 's' + x.n === key);
+      return v && { v: v, name: 'Version ' + v.n };
+    }
+
+    function renderVersions() {
+      const row = (key, title, v) => {
+        const inDv = v.text === live();
+        const here = v.text === ed.value;
+        return (
+          '<div class="vs' + (key === 'o' ? ' orig' : '') + (inDv ? ' live' : '') + (here ? ' here' : '') + '" data-vs="' + key + '" title="Click to load into the editor">' +
+          '<span class="vs-dot"></span><div class="vs-main"><div class="vs-t">' + esc(title) +
+          (inDv ? '<span class="vs-tag live">in Dataverse</span>' : '') +
+          (here && !inDv ? '<span class="vs-tag here">in the editor</span>' : '') +
+          '</div><div class="vs-m">' + esc(clock(v.at)) + ' · ' + kb(v.text) + '</div></div></div>'
+        );
+      };
+      const rows = ['<div class="vs-h">This tab</div>', row('o', 'Original', versions.original)];
+      versions.saved.slice().reverse().forEach((v) => rows.push(row('s' + v.n, 'Version ' + v.n, v)));
+      rows.push('<div class="vs-note">' + (versions.saved.length ? 'The last ' + MAX_SAVED + ' saves and the original. ' : 'Each save adds a version here. ') + 'They stay while this tab is open; the backup file stays in your downloads.</div>');
+      list.innerHTML = rows.join('');
+      get('vs-n').textContent = versions.saved.length ? String(versions.saved.length) : '';
+    }
+
+    function showVersions() {
+      doc.body.classList.add('side');
+      get('versions').setAttribute('aria-pressed', 'true');
+      renderVersions();
+    }
+
+    function hideVersions() {
+      doc.body.classList.remove('side');
+      get('versions').setAttribute('aria-pressed', 'false');
+    }
+
+    get('versions').addEventListener('click', () => (doc.body.classList.contains('side') ? hideVersions() : showVersions()));
+    get('vs-close').addEventListener('click', hideVersions);
+
+    // "in the editor" follows the typing
+    let marks = null;
+    ed.addEventListener('input', () => {
+      clearTimeout(marks);
+      marks = setTimeout(renderVersions, 300);
+    });
+
+    list.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-vs]');
+      const found = el && versionOf(el.getAttribute('data-vs'));
+      if (!found || found.v.text === ed.value) return;
+      const known = ed.value === live() || versions.saved.concat([versions.original]).some((v) => v.text === ed.value);
+      if (!known && !tab.confirm('Replace your unsaved edit in the editor with ' + found.name.toLowerCase() + '?')) return;
+      ed.value = found.v.text;
+      renderVersions();
+      const label = found.name.replace(/^The /, '').replace(/^./, (c) => c.toUpperCase());
+      status(label + ' is in the editor' + (found.v.text === live() ? ' - the same as in Dataverse.' : ' - Save to Dataverse to make it live.'));
+    });
+    renderVersions();
+
+    // A save that is neither the original nor the last version is a new one.
+    function addVersion(text) {
+      const last = versions.saved[versions.saved.length - 1];
+      if (text === versions.original.text || (last && last.text === text)) return;
+      versions.saved.push({ n: versions.next++, text: text, at: Date.now() });
+      while (versions.saved.length > MAX_SAVED) versions.saved.shift();
+      renderVersions();
+    }
+
+    // Closing the tab with an edit not in Dataverse asks first.
+    tab.addEventListener('beforeunload', (e) => {
+      if (ed.value !== live()) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
 
     get('copy-text').addEventListener('click', async () => {
       const ok = await copyInto(tab, stepsText);
@@ -787,6 +909,7 @@
       ctx.wf = fresh;
       ctx.etag = fresh['@odata.etag'];
       ed.value = fresh.xaml || '';
+      renderVersions();
       await renderSteps(ctx.wf.xaml || '', false);
     }
 
@@ -823,8 +946,10 @@
       try {
         await saveXaml(ctx.id, ctx.etag, xaml);
         await refresh();
+        addVersion(live());
         flash(btn, 'Saved \u2014 refresh the designer', true);
         status('Saved at ' + new Date().toLocaleTimeString() + '. Steps view updated.');
+        DynaBoost.saved('workflow', 'save');
       } catch (e) {
         flash(btn, 'Save failed', false);
         status(e.message);
@@ -885,6 +1010,7 @@
       etag: wf['@odata.etag'],
       original: wf.xaml || ''
     });
+    DynaBoost.saved('workflow');
   }
 
   DynaBoost.register({

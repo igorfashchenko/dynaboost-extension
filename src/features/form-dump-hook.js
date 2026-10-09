@@ -1,12 +1,22 @@
 /* DynaBoost - page-world helper for Form as JSON. Reads window.Xrm, which a
- * content script cannot see: which form and record are open, and the runtime
- * state of tabs, sections and controls (visible, disabled, unsaved changes).
+ * content script cannot see: which form and record are open, the runtime
+ * state of tabs, sections and controls (visible, disabled, unsaved changes)
+ * and the record's business process flow (stages, their fields, the active
+ * one).
  * Nothing is fetched or written. */
 (function () {
-  if (window.__dynaboostFormHook) return;
-  window.__dynaboostFormHook = true;
-
-  const SRC = 'dynaboost-form-ctx';
+  /* The channel carries the version of what the snapshot holds (form-dump.js
+   * asks on the same one). A page keeps its helper until it is reloaded -
+   * Dynamics moves between records without reloading - so after an update an
+   * older helper can still be here, answering in its older shape (no
+   * business process, say). This one goes in beside it, on its own channel,
+   * and the old one is never asked again. A change to the snapshot gets a
+   * new number here and there. */
+  const SRC = 'dynaboost-form-ctx-2';
+  if (window.__dynaboostFormHook2) return;
+  window.__dynaboostFormHook2 = true;
+  // Seen by the content script: this helper is in, it answers at once.
+  document.documentElement.setAttribute('data-dynaboost-form-hook', '2');
 
   function clean(g) {
     return String(g || '').replace(/[{}]/g, '').toLowerCase();
@@ -88,6 +98,34 @@
       })
     );
 
+    // The business process flow on the record: its stages in order, each
+    // one's fields (steps) and which stage is active. Its fields are not in
+    // the form definition - the form shows them in the process bar.
+    const proc = safe(() => fc.data.process, null);
+    const active = proc ? safe(() => proc.getActiveProcess(), null) : null;
+    if (active) {
+      const activeStage = safe(() => proc.getActiveStage(), null);
+      const activeId = activeStage ? clean(safe(() => activeStage.getId(), '')) : '';
+      out.process = {
+        id: clean(safe(() => active.getId(), '')),
+        name: safe(() => active.getName(), null),
+        status: safe(() => proc.getStatus(), null),
+        stages: []
+      };
+      safe(() =>
+        active.getStages().forEach((st) => {
+          const id = clean(safe(() => st.getId(), ''));
+          const stage = { id: id, name: safe(() => st.getName(), null), entity: safe(() => st.getEntityName(), null), active: !!id && id === activeId, steps: [] };
+          safe(() =>
+            st.getSteps().forEach((sp) => {
+              stage.steps.push({ name: safe(() => sp.getName(), null), attribute: safe(() => sp.getAttribute(), null), required: safe(() => sp.isRequired(), false) });
+            })
+          );
+          out.process.stages.push(stage);
+        })
+      );
+    }
+
     safe(() =>
       ent.attributes.forEach((a) => {
         out.attributes[a.getName()] = {
@@ -117,4 +155,7 @@
     }
     window.postMessage({ source: SRC, type: 'response', nonce: d.nonce, ctx: ctx, error: error }, window.location.origin);
   });
+
+  // Here now: a question asked before this came in is asked again.
+  window.postMessage({ source: SRC, type: 'ready' }, window.location.origin);
 })();

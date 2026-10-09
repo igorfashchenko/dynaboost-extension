@@ -27,6 +27,7 @@ FILES = [
     'src/features/journey.js',
     'src/features/canvas-code.js',
     'src/features/flow-run-export.js',
+    'src/features/env-compare.js',
     'src/help.js',
 ]
 

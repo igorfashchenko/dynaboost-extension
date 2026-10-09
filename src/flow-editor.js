@@ -13,7 +13,8 @@
  *   3. the flow is read again - changed since it was loaded, the save is
  *      refused;
  *   4. the version being replaced goes to chrome.storage.local
- *      (dynaboost.flowBackups, last 10) before the PATCH.
+ *      (dynaboost.flowBackups: the 5 newest of all flows, 14 days) before
+ *      the PATCH.
  * Validate runs 1 and 2 only.
  */
 (function () {
@@ -28,7 +29,9 @@
     '<path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
 
   const BACKUP_KEY = 'dynaboost.flowBackups';
-  const BACKUPS_KEPT = 10;
+  const BACKUPS_KEPT = 5;
+  const BACKUP_DAYS = 14; // background.js trims them too, when the browser starts
+  const fresh = (b) => !!b && Date.now() - Date.parse(b.savedAt) < BACKUP_DAYS * 86400000;
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
@@ -37,6 +40,9 @@
 
   const params = new URLSearchParams(location.search);
   let source = Number(params.get('tab')) || null;
+  // The flow's tab is in an incognito window (and this editor is not): it is
+  // the only side whose sign-in this editor uses.
+  const sourceIncognito = params.get('incognito') === '1';
   let onWait = null; // the editor's status line, while a tab is being waited for
 
   function sendTo(tabId, msg) {
@@ -54,7 +60,9 @@
     return new Promise((resolve) => {
       chrome.tabs.query({ url: PORTAL + '/*' }, (tabs) => {
         const score = (t) => (String(t.url).toLowerCase().indexOf(where.flow) >= 0 ? 2 : String(t.url).indexOf(where.env) >= 0 ? 1 : 0);
-        resolve((tabs || []).filter((t) => t.status !== 'unloaded').sort((a, b) => score(b) - score(a) || (b.active ? 1 : 0) - (a.active ? 1 : 0)));
+        // Only tabs on the same side as the flow's: incognito or not, the
+        // other side may be signed in as someone else.
+        resolve((tabs || []).filter((t) => t.status !== 'unloaded' && !!t.incognito === sourceIncognito).sort((a, b) => score(b) - score(a) || (b.active ? 1 : 0) - (a.active ? 1 : 0)));
       });
     });
   }
@@ -103,10 +111,92 @@
     'Power Automate’s checks are not available on this page yet - the page has not called the Flow API. ' +
     'Open the flow in the designer (Edit) once, come back to this tab and try again. Nothing is saved unchecked.';
 
+  /* A solution flow saved as a draft and never published has no published
+   * row in Dataverse yet - and the APIs Edit flow reads and saves with see
+   * only the published flow: "Entity 'workflow' With Id = ... Does Not Exist"
+   * (0x80040217). */
+  const NOT_PUBLISHED =
+    'This flow has not been published yet - it exists only as a draft, and DynaBoost could not read the draft. Open the flow in the designer (Edit) once ' +
+    'in its Power Automate tab, or sign in to its environment in Dynamics 365, and try again; or publish it once in the designer. ' +
+    '(The same message comes for a flow that was deleted or is in another environment.)';
+  const isNotPublished = (msg) => /Entity\s+'?workflow'?\s+With\s+Id\s*=.*Does\s+Not\s+Exist|0x80040217/i.test(String(msg || ''));
+  // Dataverse refusing a save over a draft that is waiting to be published.
+  const DRAFT_BLOCKS =
+    'This flow has an unpublished draft, saved in the designer, and Power Automate does not save over it. Publish the draft first - ' +
+    'Save to flow asks to when it can reach the flow\u2019s environment - or click Publish in the designer, then Save again.';
+  const isDraftBlocking = (msg) => /unpublished active row|ActiveUnpublished/i.test(String(msg || ''));
+
   function explain(err) {
+    if (err && err.code === 'no-dv') return NOT_PUBLISHED;
     if (err && err.code === 'no-auth') return NOT_READY;
     if (err && err.code === 'no-check') return NO_CHECK;
-    return (err && err.message) || String(err);
+    const msg = (err && err.message) || String(err);
+    if (isDraftBlocking(msg)) return DRAFT_BLOCKS;
+    return isNotPublished(msg) ? NOT_PUBLISHED : msg;
+  }
+
+  // ---------- the draft, wherever it can be reached ----------
+
+  /* The flow's environment in Dynamics 365: from the list DynaBoost keeps of
+   * the user's environments (read as make.powerautomate.com or
+   * make.powerapps.com lists them), else from Open in classic's memory. */
+  function hostOf(env) {
+    const key = String(env || '').toLowerCase();
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get('dynaboost.environments', (d) => {
+          const list = ((d && d['dynaboost.environments']) || {}).list || [];
+          const hit = list.find((e) => e && e.host && String(e.id || '').toLowerCase() === key);
+          if (hit) return resolve(hit.host);
+          chrome.storage.sync.get('dynaboost.orgHosts', (x) => resolve(((x && x['dynaboost.orgHosts']) || {})[env] || null));
+        });
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  // In a tab of the flow's environment (background.js): { result, host } or
+  // { error: 'no-host' | 'no-tab' | 'signin' | 'unreachable' | message, host }.
+  async function viaDynamics(where, op, on, noOpen) {
+    const host = await hostOf(where.env);
+    if (!host) return { error: 'no-host' };
+    try {
+      const r = await chrome.runtime.sendMessage({ type: 'DB_DV_FLOW', host: host, op: op, id: where.flow, on: !!on, noOpen: !!noOpen });
+      if (!r) return { error: 'unreachable', host: host };
+      return r.error ? { error: r.error, host: host } : { result: r, host: host };
+    } catch (e) {
+      return { error: e.message, host: host };
+    }
+  }
+
+  function whyText(v) {
+    const e = (v && v.error) || '';
+    const host = (v && v.host) || 'the environment';
+    if (e === 'no-host') return 'DynaBoost does not know this environment\u2019s Dynamics 365 address yet - open make.powerautomate.com or make.powerapps.com once, so it can read your environments.';
+    if (e === 'signin') return 'sign in to ' + host + ' in this browser once.';
+    if (e === 'unreachable') return host + ' could not be reached.';
+    if (e === 'no-tab') return 'it is looked for when you save.';
+    return e || 'no answer.';
+  }
+
+  /* A solution flow's draft: read by the Power Automate page when it can
+   * (its designer was open there), else in a tab of the flow's environment.
+   * null when neither could tell. */
+  async function findDraft(where, noOpen) {
+    const d = await ask('draft', where).catch(() => null);
+    if (d && d.available) return Object.assign(d, { route: 'page' });
+    const v = await viaDynamics(where, 'draft', false, noOpen);
+    if (v.result && v.result.available) return Object.assign(v.result, { route: 'dynamics', host: v.host });
+    return null;
+  }
+
+  // As Publish in the designer: the draft becomes the flow, on or off as it was.
+  async function publishDraft(where, d) {
+    if (d.route === 'page') return ask('publish', where, { body: { on: d.on } });
+    const v = await viaDynamics(where, 'publish', d.on, false);
+    if (v.error) throw new Error('The draft could not be published in ' + (v.host || 'the environment') + ': ' + whyText(v));
+    return v.result;
   }
 
   // ---------- the flow ----------
@@ -124,16 +214,47 @@
     };
   }
 
+  // A draft read from Dataverse (the hook's 'draft'): draft 'only' - never
+  // published; 'pending' - published, with a newer draft saved in the designer.
+  function describeDraft(d, kind) {
+    return {
+      via: null,
+      name: d.name || 'Flow',
+      state: d.on ? 'Started' : 'Stopped',
+      environment: null,
+      modified: String(d.modified || '').slice(0, 16).replace('T', ' '),
+      definition: d.definition,
+      connectionReferences: d.connectionReferences || {},
+      draft: kind
+    };
+  }
+
+  // The published flow, as always; a flow never published opens as its draft.
+  async function load(where) {
+    try {
+      return describe(await ask('get', where));
+    } catch (err) {
+      if (!isNotPublished(err.message)) throw err;
+      const d = await findDraft(where, false);
+      if (!d || !d.definition) throw err;
+      return describeDraft(d, 'only');
+    }
+  }
+
   const editable = (f) => JSON.stringify({ connectionReferences: f.connectionReferences, definition: f.definition }, null, 2);
+  // JSON with the keys in order, to compare what two APIs return.
+  const canon = (v) =>
+    JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, key) => ((o[key] = x[key]), o), {}) : x));
   const same = (a, b) => JSON.stringify(a.definition) === JSON.stringify(b.definition) && JSON.stringify(a.connectionReferences) === JSON.stringify(b.connectionReferences);
 
   function backup(where, f) {
     return new Promise((resolve) => {
       try {
         chrome.storage.local.get(BACKUP_KEY, (data) => {
-          const list = (data && data[BACKUP_KEY]) || [];
-          // text keeps the flow's own key order - chrome.storage sorts an object's keys
-          list.unshift({ env: where.env, id: where.flow, name: f.name, savedAt: new Date().toISOString(), text: editable(f), connectionReferences: f.connectionReferences, definition: f.definition });
+          const list = ((data && data[BACKUP_KEY]) || []).filter(fresh);
+          // As text only: it keeps the flow's own key order (chrome.storage
+          // sorts an object's keys), and the flow is not kept twice.
+          list.unshift({ env: where.env, id: where.flow, name: f.name, savedAt: new Date().toISOString(), text: editable(f) });
           chrome.storage.local.set({ [BACKUP_KEY]: list.slice(0, BACKUPS_KEPT) }, resolve);
         });
       } catch (e) {
@@ -245,6 +366,23 @@
       '.crumbs{margin-top:3px;font-size:13px;color:var(--dbc-fg-56637f)}.crumbs a{color:var(--dbc-fg-1e6bff);text-decoration:none}.crumbs a:hover{text-decoration:underline}' +
       '.bd{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:10px;background:var(--dbc-bg-eef2f9);color:var(--dbc-fg-56637f);font-size:11.5px;vertical-align:1px}' +
       '.bd.ok{background:var(--dbc-bg-e4f4e8);color:var(--dbc-fg-1c6b32)}' +
+      '.bd.draft{background:var(--dbc-bg-fdf1d6);color:var(--dbc-fg-9a6a12);font-weight:600;cursor:help}' +
+      // A question in DynaBoost's own dialog, as the panel's (Presenting): the
+      // page dimmed, a card with the golden spiral, Yes / No - Yes first, as
+      // in Microsoft's dialogs.
+      '.ask{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(6,14,34,.55)}' +
+      '.ask-box{position:relative;overflow:hidden;width:420px;max-width:calc(100% - 32px);padding:18px 20px;border-radius:10px;background:var(--dbc-bg-fff);color:var(--dbc-fg-10224e);box-shadow:0 18px 50px rgba(6,14,34,.35)}' +
+      '.ask-box::after{content:"";position:absolute;right:-22px;top:-18px;width:210px;height:130px;background:' + (DynaBoost.markUrl || 'none') + ' no-repeat right top/contain;opacity:.4;pointer-events:none}' +
+      '.ask-box>*{position:relative;z-index:1}' +
+      '.ask-head{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:600}' +
+      '.ask-head button{border:none;background:none;padding:0 2px;font-size:18px;color:var(--dbc-fg-56637f);cursor:pointer}' +
+      '.ask-text{margin:10px 0 18px;font-size:14px;line-height:1.5;color:var(--dbc-fg-3d4a66)}' +
+      '.ask-actions{display:flex;justify-content:flex-end;gap:8px}' +
+      '.ask-actions button{min-width:76px;padding:8px 16px;border:1px solid var(--dbc-bd-c6d0e4);border-radius:6px;background:var(--dbc-bg-fff);color:var(--dbc-fg-10224e);font:inherit;font-size:14px;cursor:pointer}' +
+      '.ask-actions button:hover{border-color:var(--dbc-bd-1e6bff);color:var(--dbc-fg-1e6bff)}' +
+      '.ask-actions .primary{border-color:var(--dbc-bd-1e6bff);background:var(--dbc-bg-1e6bff);color:var(--dbc-fg-fff);font-weight:600}' +
+      '.ask-actions .primary:hover{background:var(--dbc-bg-155ee0);color:var(--dbc-fg-fff)}' +
+      '[hidden]{display:none!important}' +
       '.why{margin-top:8px;padding:8px 12px;border-radius:6px;background:var(--dbc-bg-fdf1d6);color:var(--dbc-fg-7a5410);font-size:13px;max-width:900px}' +
       '.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;padding-bottom:12px}' +
       'button{padding:7px 13px;border:1px solid var(--dbc-bd-c6d0e4);border-radius:6px;background:var(--dbc-bg-fff);color:var(--dbc-fg-10224e);font:inherit;cursor:pointer}' +
@@ -310,10 +448,11 @@
       '</style>' +
       '<body>' +
       '<header>' +
-      '<h1>' + esc(f.name) + '<span class="bd' + (on ? ' ok' : '') + '">' + (on ? 'On' : f.state ? esc(f.state.replace(/^stopped$/i, 'Off')) : 'flow') + '</span></h1>' +
+      '<h1>' + esc(f.name) + '<span class="bd' + (on ? ' ok' : '') + '">' + (on ? 'On' : f.state ? esc(f.state.replace(/^stopped$/i, 'Off')) : 'flow') + '</span>' +
+      '<span class="bd draft" id="draft-bd" hidden></span></h1>' +
       '<div class="crumbs">flow <code>' + esc(where.flow) + '</code> · environment <code>' + esc(where.env) + '</code>' +
       (f.modified ? ' · modified ' + esc(f.modified) : '') +
-      ' · <a href="' + esc(flowUrl) + '" target="_blank" rel="noopener">open flow</a>' +
+      ' · <a href="' + esc(flowUrl) + '" id="open-flow" target="_blank" rel="noopener">open flow</a>' +
       ' · <a href="#" id="to-portal" title="Reload the Power Automate tab this editor works with and switch to it - to see a save in the designer or test it">reload in Power Automate</a></div>' +
       (on ? '<div class="why">This flow is on: a save takes effect for its next run.</div>' : '') +
       '<div class="bar">' +
@@ -334,7 +473,12 @@
       '<button class="pn" id="tab-checks" data-pane="checks"><span id="ck-title">Checks</span></button>' +
       '<button id="ck-all" title="Copy every error and warning, ready to send">Copy all</button><button id="ck-close" title="Close">\u2715</button></div>' +
       '<div class="ck-list" id="ck-list"><div class="ck-none" style="color:var(--dbc-fg-56637f)">Validate shows Power Automate\u2019s errors and warnings here.</div></div>' +
-      '<div class="ck-list" id="vs-list"></div></aside></main>'
+      '<div class="ck-list" id="vs-list"></div></aside></main>' +
+      '<div class="ask" id="ask" role="dialog" aria-modal="true" aria-labelledby="ask-title" hidden><div class="ask-box">' +
+      '<div class="ask-head"><span id="ask-title"></span><button type="button" id="ask-x" aria-label="Close">\u2715</button></div>' +
+      '<div class="ask-text" id="ask-text"></div>' +
+      '<div class="ask-actions"><button type="button" class="primary" id="ask-yes">Yes</button><button type="button" id="ask-no">No</button></div>' +
+      '</div></div>'
     );
   }
 
@@ -393,6 +537,106 @@
     let flow = first;
     let original = editable(flow);
     let busy = false;
+    // Closing to publish in the designer: no "unsaved edit" question then.
+    let closing = false;
+
+    // A question in DynaBoost's own dialog: Yes resolves true; No, ✕, Esc or
+    // a click beside it false.
+    function choose(title, text, yes, no) {
+      const box = get('ask');
+      get('ask-title').textContent = title;
+      get('ask-text').textContent = text;
+      get('ask-yes').textContent = yes || 'Yes';
+      get('ask-no').textContent = no || 'No';
+      box.hidden = false;
+      get('ask-yes').focus();
+      return new Promise((resolve) => {
+        const done = (yes) => {
+          box.hidden = true;
+          doc.removeEventListener('keydown', onKey, true);
+          box.onclick = null;
+          resolve(yes);
+        };
+        const onKey = (e) => {
+          if (e.key !== 'Escape') return;
+          e.preventDefault();
+          e.stopPropagation();
+          done(false);
+        };
+        doc.addEventListener('keydown', onKey, true);
+        box.onclick = (e) => {
+          if (e.target === box || e.target.id === 'ask-no' || e.target.id === 'ask-x') done(false);
+          else if (e.target.id === 'ask-yes') done(true);
+        };
+      });
+    }
+
+    /* When the flow has to be published and DynaBoost cannot do it from
+     * here: OK keeps the edit (on the clipboard and under Versions), brings
+     * the flow's Power Automate tab forward and closes this one - Publish is
+     * clicked there, then Edit flow opened again. Cancel stays. */
+    async function askToPublish(why) {
+      const go = await choose(
+        'Publish the flow first',
+        why + ' OK closes this tab - your code is copied and kept under Versions - and brings the flow\u2019s Power Automate tab forward: click Publish in its designer, then open Edit flow again.',
+        'OK',
+        'Cancel'
+      );
+      if (!go) {
+        setStatus('Not saved. Publish the flow in its designer, then Save again.', null);
+        return;
+      }
+      const text = ed.value;
+      await copyInto(tab, text).catch(() => false);
+      await new Promise((resolve) => {
+        try {
+          chrome.storage.local.get(BACKUP_KEY, (data) => {
+            const list = ((data && data[BACKUP_KEY]) || []).filter(fresh);
+            list.unshift({ env: where.env, id: where.flow, name: flow.name, label: 'Your edit, before publishing', savedAt: new Date().toISOString(), text: text });
+            chrome.storage.local.set({ [BACKUP_KEY]: list.slice(0, BACKUPS_KEPT) }, resolve);
+          });
+        } catch (e) {
+          resolve();
+        }
+      });
+      closing = true;
+      if (source) showSource();
+      try {
+        chrome.tabs.getCurrent((t) => (t ? chrome.tabs.remove(t.id) : tab.close()));
+      } catch (e) {
+        tab.close();
+      }
+    }
+
+    // A draft: a mark by the name, what it means on hover; Save to flow
+    // publishes it first (asked).
+    function markDraft(kind) {
+      flow.draft = kind || null;
+      const bd = get('draft-bd');
+      bd.hidden = !kind;
+      if (kind === 'only') {
+        bd.textContent = 'Draft - not published';
+        bd.title = 'This flow has not been published yet - this is its draft, as the designer shows it. Save to flow publishes the draft first (it asks), then saves.';
+      } else if (kind === 'pending') {
+        bd.textContent = 'Unpublished draft';
+        bd.title = 'This flow has a newer draft, saved in the designer and not published - shown here is the published flow. Save to flow publishes the draft first (it asks; it stays in the version history), then saves over it.';
+      }
+    }
+
+    // A published flow with a newer draft waiting in the designer.
+    function lookForDraft() {
+      if (flow.draft === 'only') return;
+      // As it opens: no tab is opened for this - Save looks with one if needed.
+      findDraft(where, true).then(
+        (d) => {
+          if (d && d.published && d.hasDraft) markDraft('pending');
+          else if (d) markDraft(null);
+        },
+        () => {}
+      );
+    }
+    markDraft(flow.draft);
+    lookForDraft();
 
     // ---------- versions ----------
     //
@@ -511,7 +755,7 @@
       if (older.length) {
         rows.push('<div class="vs-h">Backups in this browser</div>');
         older.forEach((b, i) => rows.push(entry('b' + i, 'Before a save', b, null)));
-        rows.push('<div class="vs-note">The flow as it was before each save, kept across sessions (' + BACKUPS_KEPT + ' newest, all flows).</div>');
+        rows.push('<div class="vs-note">The flow as it was before each save, from any session - kept ' + BACKUP_DAYS + ' days.</div>');
       }
       list.innerHTML = rows.join('');
       get('vs-n').textContent = versions.saved.length ? String(versions.saved.length) : '';
@@ -536,7 +780,8 @@
       try {
         chrome.storage.local.get(BACKUP_KEY, (data) => {
           older = ((data && data[BACKUP_KEY]) || [])
-            .filter((b) => b.id === where.flow && (b.text || b.definition))
+            // this flow in this environment - a solution keeps a flow's id from one environment to the next
+            .filter((b) => fresh(b) && b.id === where.flow && b.env === where.env && (b.text || b.definition))
             .map((b) => ({ at: Date.parse(b.savedAt) || Date.now(), savedAt: b.savedAt, name: b.label || '', text: typeof b.text === 'string' ? b.text : editable(b) }))
             // what the session list already shows is not repeated
             .filter((b) => !sameText(b.text, versions.original.text) && !versions.saved.some((v) => sameText(v.text, b.text)));
@@ -767,6 +1012,7 @@
     // Closing asks first when an edit is unsaved or more than three versions
     // were saved.
     tab.addEventListener('beforeunload', (e) => {
+      if (closing) return;
       if (ed.value !== original || versions.saved.length > 3) {
         e.preventDefault();
         e.returnValue = '';
@@ -777,20 +1023,38 @@
     get('versions').addEventListener('click', () => (doc.body.classList.contains('pane-versions') ? hidePane() : showPane('versions')));
     for (const b of doc.querySelectorAll('[data-pane]')) b.addEventListener('click', () => showPane(b.getAttribute('data-pane')));
 
+    /* Opened from an incognito window, the editor sits in a regular one
+     * (Chrome keeps extension pages out of incognito), where another account
+     * may be signed in. The flow is then shown in its own incognito tab -
+     * never opened here. */
+    const details = PORTAL + '/environments/' + encodeURIComponent(where.env) + '/flows/' + where.flow + '/details';
+    const showSource = () =>
+      chrome.tabs.get(source, (t) => {
+        if (chrome.runtime.lastError || !t) return;
+        chrome.tabs.update(t.id, { active: true });
+        chrome.windows.update(t.windowId, { focused: true });
+      });
+    // The flow lost its tab: open it again, in incognito if it was there.
+    const openFlow = () => (sourceIncognito ? chrome.windows.create({ incognito: true, url: details }) : tab.open(details, '_blank'));
+
+    get('open-flow').addEventListener('click', (e) => {
+      if (!sourceIncognito) return;
+      e.preventDefault();
+      if (source) showSource();
+      else openFlow();
+    });
+
     // Reload the portal tab and switch to it, to test a save.
     get('to-portal').addEventListener('click', (e) => {
       e.preventDefault();
-      if (!source) {
-        tab.open(PORTAL + '/environments/' + encodeURIComponent(where.env) + '/flows/' + where.flow + '/details', '_blank');
-        return;
-      }
+      if (!source) return void openFlow();
       chrome.tabs.reload(source, {}, () => {
         if (chrome.runtime.lastError) {
           source = null;
-          tab.open(PORTAL + '/environments/' + encodeURIComponent(where.env) + '/flows/' + where.flow + '/details', '_blank');
+          openFlow();
           return;
         }
-        chrome.tabs.update(source, { active: true });
+        showSource();
       });
     });
 
@@ -908,7 +1172,9 @@
       if (ed.value !== original && !tab.confirm('Discard your unsaved edits and reload the flow?')) return;
       const btn = e.currentTarget;
       try {
-        flow = describe(await ask('get', where));
+        flow = await load(where);
+        markDraft(flow.draft);
+        lookForDraft();
         original = editable(flow);
         ed.value = original;
         if (doc.body.classList.contains('pane-checks')) showPane('versions');
@@ -938,19 +1204,92 @@
           setStatus('Not saved.', null);
           return;
         }
-        setStatus('Saving…', null);
-        const now = describe(await ask('get', where));
-        if (!same(now, flow)) throw new Error('This flow changed since you loaded it (saved in the designer or another tab). Copy your edit, Reload, and apply it again.');
-        await backup(where, now);
-        const saved = await ask('save', where, {
-          via: flow.via,
-          body: { displayName: now.name, environment: now.environment, definition: v.parsed.definition, connectionReferences: v.parsed.connectionReferences }
-        });
+        // A draft is looked for at every save, not only as the flow opened:
+        // the designer may have saved one since - or published it. In the
+        // Power Automate page when it can, else in a tab of the flow's
+        // environment. Found: published first, as Publish in the designer
+        // would - asked. Not to be found: saved as it is; if Power Automate
+        // refuses it for a draft, one question - publish it in the designer.
+        setStatus('Checking for an unpublished draft\u2026', null);
+        // Opened as the draft: there is no published flow to compare with.
+        const asDraft = flow.draft === 'only';
+        const found = await findDraft(where, false);
+        if (found) markDraft(!found.published ? 'only' : found.hasDraft ? 'pending' : null);
+        let published = false;
+        if (flow.draft && found) {
+          const yes = await choose(
+            'Publish the draft?',
+            flow.draft === 'only'
+              ? 'This flow is a draft. To save your code, the draft has to be published first.'
+              : 'This flow has an unpublished draft. To save your code, the draft has to be published first – your code then replaces it.'
+          );
+          if (!yes) {
+            setStatus('Not saved.', null);
+            return;
+          }
+          setStatus('Publishing the draft\u2026', null);
+          try {
+            await publishDraft(where, found);
+          } catch (e) {
+            return askToPublish('DynaBoost could not publish the draft from here (' + ((e && e.message) || e) + ').');
+          }
+          published = true;
+          markDraft(null);
+          setStatus('Draft published. Saving your code\u2026', null);
+        } else {
+          setStatus('Saving\u2026', null);
+        }
+        const put = async () => {
+          const now = describe(await ask('get', where));
+          // Just published (here or in the designer): the flow is the draft
+          // now, so there is nothing to compare with what was loaded.
+          const fromDraft = published || asDraft;
+          if (!fromDraft && !same(now, flow)) throw new Error('This flow changed since you loaded it (saved in the designer or another tab). Copy your edit, Reload, and apply it again.');
+          if (published && !now.definition) throw new Error('The flow could not be read after publishing the draft. Reload and try again.');
+          // Connection references as the published flow has them (Dataverse
+          // keeps a draft's in another form) - unless they were edited here.
+          const refs = fromDraft && canon(v.parsed.connectionReferences) === canon(flow.connectionReferences) ? now.connectionReferences : v.parsed.connectionReferences;
+          await backup(where, now);
+          return ask('save', where, {
+            via: flow.via,
+            body: { displayName: now.name, environment: now.environment, definition: v.parsed.definition, connectionReferences: refs }
+          });
+        };
+        let saved;
+        try {
+          saved = await put();
+        } catch (err) {
+          // Refused because the flow wants publishing: published here when
+          // DynaBoost can reach its draft (asked), else the designer's job.
+          if (!(isDraftBlocking(err.message) || isNotPublished(err.message))) throw err;
+          const why = 'Power Automate did not save: this flow has an unpublished draft';
+          if (published) return askToPublish('Power Automate still did not save after the draft was published here.');
+          const d = found || (await findDraft(where, false));
+          if (!d) return askToPublish(why + ', and DynaBoost cannot publish it from here.');
+          markDraft('pending');
+          const yes = await choose('Publish the draft?', why + '. Publish it now - as Publish in the designer - and save your code over it?');
+          if (!yes) {
+            setStatus('Not saved. Publish the flow in its designer, then Save again.', null);
+            return;
+          }
+          setStatus('Publishing the draft\u2026', null);
+          try {
+            await publishDraft(where, d);
+          } catch (e) {
+            return askToPublish('DynaBoost could not publish the draft from here (' + ((e && e.message) || e) + ').');
+          }
+          published = true;
+          markDraft(null);
+          setStatus('Draft published. Saving your code\u2026', null);
+          saved = await put();
+        }
         flow = describe(saved);
         if (!flow.definition) flow = describe(await ask('get', where));
         original = editable(flow);
         ed.value = original;
         afterSave(original);
+        // A use, for Time saved (background.js adds it up).
+        chrome.runtime.sendMessage({ type: 'DB_SAVED', id: 'flow-edit' }).catch(() => {});
         flash(btn, 'Saved', true);
         setStatus('Saved. “Reload in Power Automate” (above) shows it in the designer - this editor stays ready for the next change.', 'good');
       } catch (err) {
@@ -981,7 +1320,7 @@
     let flow;
     try {
       if (!where.env || !where.flow) throw new Error('No flow given.');
-      flow = describe(await ask('get', where));
+      flow = await load(where);
       if (!flow.definition) throw new Error('The flow came back without a definition.');
     } catch (e) {
       document.title = 'Edit flow';
