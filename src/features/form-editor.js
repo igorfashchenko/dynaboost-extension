@@ -3,11 +3,17 @@
  * Open table opens the record's table, /environments/{environment}/solutions/{solution}/entities/{table's MetadataId}.
  * Edit view opens the list's view in the view designer,
  * /e/{environment}/s/{solution}/entity/{table}/view/{view}.
- * Each in a solution that holds it: the one unmanaged solution of yours
- * (or the one pinned in My solutions) opens at once; otherwise a list of the
- * solutions it is in - yours first, pinned on top, then the Default
- * Solution, then the managed ones - and you pick. The list is a dialog over
- * the page: a click on it opens the tab, so it is never a blocked pop-up.
+ * Edit form and Edit view open at once, with no list: in the first of the
+ * solutions that hold the form or view - the one pinned in My shortcuts,
+ * else yours (unmanaged), else the Default Solution. The tab is opened on
+ * the click and sent on when the address is known, so it is never a blocked
+ * pop-up.
+ *
+ * Open table: in a solution that holds the table - the one unmanaged
+ * solution of yours (or the one pinned in My shortcuts) opens at once;
+ * otherwise a list of the solutions it is in - yours first, pinned on top,
+ * then the Default Solution, then the managed ones - and you pick. The list
+ * is a dialog over the page: a click on it opens the tab.
  */
 (function () {
   if (DynaBoost.off) return;
@@ -27,7 +33,7 @@
   const DEFAULT_SOLUTION = 'fd140aaf-4df4-11dd-bd17-0019b9312238';
   const MAKER = 'https://make.powerapps.com';
 
-  const PINS_KEY = 'dynaboost.solutionPins'; // My solutions (solution-pins.js)
+  const PINS_KEY = 'dynaboost.solutionPins'; // My shortcuts (solution-pins.js)
   const ENTITY = 1; // solution component types
   const SYSTEM_FORM = 60;
   const SAVED_QUERY = 26;
@@ -63,7 +69,7 @@
     });
 
   /* The solutions a component is in, in the order they are offered: yours
-   * (unmanaged; pinned in My solutions first), the Default Solution, the
+   * (unmanaged; pinned in My shortcuts first), the Default Solution, the
    * managed ones. */
   async function solutionsOf(objectId, type, envId) {
     const r = await getJson(
@@ -135,7 +141,7 @@
     const row = (s) =>
       '<button type="button" class="db-sp-row' + (s.managed ? ' db-sp-managed' : '') + (s.isDefault ? ' db-sp-default' : '') + '" data-sol="' + esc(s.id) + '"' +
       ' title="' + (s.managed ? 'Managed - opens to look; changes belong in an unmanaged solution' : s.isDefault ? 'A change made here is in none of your solutions' : 'Open in this solution') + '">' +
-      '<span class="db-sp-name">' + esc(s.name) + (s.pinned ? '<span class="db-sp-tag db-sp-pin">My solutions</span>' : '') + '</span>' +
+      '<span class="db-sp-name">' + esc(s.name) + (s.pinned ? '<span class="db-sp-tag db-sp-pin">My shortcuts</span>' : '') + '</span>' +
       '<span class="db-sp-meta">' + esc([s.isDefault ? 'not exported with your solutions' : s.managed ? 'managed' : 'unmanaged', s.version, s.unique && !s.isDefault ? s.unique : ''].filter(Boolean).join(' · ')) + '</span>' +
       '<span class="db-sp-go">↗</span></button>';
     const own = list.filter((s) => !s.managed);
@@ -182,22 +188,52 @@
     pick(d, what, list, urlFor, done);
   }
 
+  /* Edit form, Edit view: the tab opens on the click, says it is opening,
+   * and goes on to the designer once the address is known - or says what
+   * went wrong. */
+  async function openDirect(what, address, toolId) {
+    const tab = window.open('', '_blank');
+    if (!tab) {
+      DynaBoost.toast('The tab was blocked', 'Allow pop-ups for this site and try again.', true);
+      return;
+    }
+    const line = (kind, text) =>
+      '<p style="display:flex;align-items:center;gap:10px;margin:0">' + DynaBoost.status.html(kind) + '<span>' + esc(text) + '</span></p>';
+    tab.document.write(
+      '<!doctype html><meta charset="utf-8"><title>Opening…</title><style>' + DynaBoost.status.css + '</style>' +
+        '<body style="font:14px/1.5 \'Segoe UI\',system-ui,sans-serif;padding:24px;color:var(--dbc-fg-10224e)"><div id="s">' + line('busy', 'Opening the ' + what + ' designer…') + '</div>'
+    );
+    tab.document.close();
+    DynaBoost.themeTab(tab);
+    try {
+      const url = await address();
+      if (tab.closed) return;
+      tab.location.replace(url);
+      DynaBoost.saved(toolId);
+    } catch (e) {
+      if (tab.closed) return;
+      const s = tab.document.getElementById('s');
+      if (s) s.innerHTML = line('bad', (e && e.message) || String(e));
+    }
+  }
+
+  // The first of the solutions that hold it: pinned, yours, else Default.
+  const firstSolution = async (objectId, type, envId) => (await solutionsOf(objectId, type, envId))[0].id;
+
   // ---------- Edit form ----------
 
-  // The dialog shows at once, while the page and the environment are read.
-  async function runForm() {
-    const d = dialog('Edit form');
-    d.busy('Reading the form…');
-    const ctx = DynaBoost.formContext ? await DynaBoost.formContext() : null;
-    const envId = clean((ctx && ctx.envId) || (await environmentId()));
-    const why = !ctx || !ctx.entity ? 'No record form on this page.' : !ctx.formId ? 'The page does not say which form is open.' : !envId ? 'The environment id could not be read.' : '';
-    if (why) return d.fail('Could not open the form designer. ' + why);
-    const formId = clean(ctx.formId);
-    openIn(
-      d,
+  function runForm() {
+    openDirect(
       'form',
-      () => solutionsOf(formId, SYSTEM_FORM, envId),
-      (sol) => MAKER + '/e/' + envId + '/s/' + sol + '/entity/' + encodeURIComponent(ctx.entity) + '/form/edit/' + formId,
+      async () => {
+        const ctx = DynaBoost.formContext ? await DynaBoost.formContext() : null;
+        const envId = clean((ctx && ctx.envId) || (await environmentId()));
+        const why = !ctx || !ctx.entity ? 'No record form on this page.' : !ctx.formId ? 'The page does not say which form is open.' : !envId ? 'The environment id could not be read.' : '';
+        if (why) throw new Error('Could not open the form designer. ' + why);
+        const formId = clean(ctx.formId);
+        const sol = await firstSolution(formId, SYSTEM_FORM, envId);
+        return MAKER + '/e/' + envId + '/s/' + sol + '/entity/' + encodeURIComponent(ctx.entity) + '/form/edit/' + formId;
+      },
       'form-editor'
     );
   }
@@ -256,23 +292,17 @@
     return { id: clean(v.savedqueryid), name: v.name || '' };
   }
 
-  async function runView() {
-    const d = dialog('Edit view');
-    d.busy('Reading the view\u2026');
-    const table = tableHere();
-    const envId = clean(await environmentId());
-    if (!table || !envId) return d.fail('Could not open the view designer. ' + (!table ? 'No list of a table on this page.' : 'The environment id could not be read.'));
-    let view;
-    try {
-      view = await viewHere(table);
-    } catch (e) {
-      return d.fail((e && e.message) || String(e));
-    }
-    openIn(
-      d,
-      'view' + (view.name ? ' (' + view.name + ')' : ''),
-      () => solutionsOf(view.id, SAVED_QUERY, envId),
-      (sol) => MAKER + '/e/' + envId + '/s/' + sol + '/entity/' + encodeURIComponent(table) + '/view/' + view.id,
+  function runView() {
+    openDirect(
+      'view',
+      async () => {
+        const table = tableHere();
+        const envId = clean(await environmentId());
+        if (!table || !envId) throw new Error('Could not open the view designer. ' + (!table ? 'No list of a table on this page.' : 'The environment id could not be read.'));
+        const view = await viewHere(table);
+        const sol = await firstSolution(view.id, SAVED_QUERY, envId);
+        return MAKER + '/e/' + envId + '/s/' + sol + '/entity/' + encodeURIComponent(table) + '/view/' + view.id;
+      },
       'view-editor'
     );
   }
@@ -284,7 +314,7 @@
     hosts: ['dynamics.com'],
     when: () => new URLSearchParams(location.search).get('pagetype') === 'entityrecord',
     type: 'action',
-    hint: 'Open this form in the form designer, in its solution',
+    hint: 'Open this form in the form designer',
     icon: ICON,
     onRun: runForm
   });
@@ -308,7 +338,7 @@
     hosts: ['dynamics.com'],
     when: () => new URLSearchParams(location.search).get('pagetype') === 'entitylist' && !!tableHere(),
     type: 'action',
-    hint: 'Open this view in the view designer, in its solution',
+    hint: 'Open this view in the view designer',
     icon: VIEW_ICON,
     onRun: runView
   });

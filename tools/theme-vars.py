@@ -28,6 +28,8 @@ FILES = [
     'src/features/canvas-code.js',
     'src/features/flow-run-export.js',
     'src/features/env-compare.js',
+    'src/features/wiki-tree.js',
+    'src/features/canvas-check.js',
     'src/help.js',
 ]
 

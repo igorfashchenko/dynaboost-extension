@@ -92,8 +92,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     const key = 'dynaboost.use';
     const use = (await chrome.storage.local.get(key))[key] || { since: Date.now(), n: 0 };
     await chrome.storage.local.set({ [key]: Object.assign({}, use, { seen: false, news: chrome.runtime.getManifest().version }) });
-    // And a dot on the (i), until What's new is opened from it.
-    await chrome.storage.local.set({ [WHATS_NEW]: chrome.runtime.getManifest().version });
+    // And a dot on the (i), until What's new is opened from it; and the
+    // panel's tour of what is new, at its next opening (core.js).
+    await chrome.storage.local.set({ [WHATS_NEW]: chrome.runtime.getManifest().version, 'dynaboost.tour': chrome.runtime.getManifest().version });
   }
   const tabs = await chrome.tabs.query({});
   for (const tab of tabs) {
@@ -204,7 +205,47 @@ const readHere = (req) =>
 /* One read in the other environment: { result } or { error: 'signin' |
  * 'unreachable' | message }. A tab opened here is closed again, whatever the
  * outcome. */
-async function readEnvironment(host, req, opener) {
+function readEnvironment(host, req, opener) {
+  return runInEnvironment(host, readHere, [req], opener);
+}
+
+/* My shortcuts: the solutions a model-driven app is in, read in a tab of its
+ * environment - with the environment's id and the app's (its unique name
+ * is enough to find it). */
+async function appSolutionsHere(app) {
+  const get = async (path) => {
+    const res = await fetch('/api/data/v9.2/' + path, { credentials: 'same-origin', headers: { Accept: 'application/json', 'OData-Version': '4.0' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  };
+  try {
+    const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let id = String(app || '').toLowerCase();
+    let name = '';
+    if (!guid.test(id)) {
+      const r = await get("appmodules?$select=appmoduleid,name&$filter=uniquename eq '" + id.replace(/'/g, "''") + "'");
+      const a = (r.value || [])[0];
+      if (!a) return { error: 'The app was not found in this environment.' };
+      id = String(a.appmoduleid).toLowerCase();
+      name = a.name || '';
+    }
+    const org = await get("RetrieveCurrentOrganization(AccessType=@p)?@p=Microsoft.Dynamics.CRM.EndpointAccessType'Default'");
+    const comps = await get(
+      'solutioncomponents?$select=componenttype&$filter=objectid eq ' + id + ' and componenttype eq 80' +
+        '&$expand=solutionid($select=solutionid,friendlyname,uniquename,ismanaged,isvisible,version)'
+    );
+    return {
+      env: (org && org.Detail && org.Detail.EnvironmentId) || '',
+      app: id,
+      name: name,
+      solutions: (comps.value || []).map((c) => c.solutionid).filter(Boolean)
+    };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+async function runInEnvironment(host, func, args, opener) {
   let tab = await tabOnHost(host);
   let ours = false;
   try {
@@ -215,14 +256,14 @@ async function readEnvironment(host, req, opener) {
       if (state === 'signin') return { error: 'signin' };
       if (state !== 'ok') return { error: 'unreachable' };
     }
-    let result = await runIn(tab.id, readHere, [req]);
+    let result = await runIn(tab.id, func, args);
     // The Web API answered 401: the environment wants a sign-in - in a tab of
     // our own, go through it once, as opening the app would.
     if (result && /^HTTP 401\b/.test(result.error || '') && ours) {
       await chrome.tabs.update(tab.id, { url: 'https://' + host + '/main.aspx' });
       const state = await settle(tab.id, host, 30000);
       if (state !== 'ok') return { error: state === 'signin' ? 'signin' : 'unreachable' };
-      result = await runIn(tab.id, readHere, [req]);
+      result = await runIn(tab.id, func, args);
     }
     if (result && /^HTTP 40[13]\b/.test(result.error || '')) return { error: 'signin', detail: result.error };
     return result && result.error ? { error: result.error } : { result: result };
@@ -305,6 +346,10 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   }
   if (msg.type === 'DB_ENV_REFRESH') {
     refreshEnvironments(sender.tab, String(msg.job || ''), !!msg.fresh).then(reply);
+    return true;
+  }
+  if (msg.type === 'DB_ENV_APP_SOLUTIONS') {
+    runInEnvironment(host, appSolutionsHere, [String(msg.app || '').slice(0, 120)], sender.tab).then(reply);
     return true;
   }
   if (msg.type === 'DB_ENV_CANCEL') {
@@ -510,7 +555,8 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       (msg.dark ? '&theme=dark' : '') +
       // The kind of page, for Report a bug: "Dynamics 365 · Record".
       (/^[A-Za-z0-9 ·]{1,40}$/.test(msg.page || '') ? '&page=' + encodeURIComponent(msg.page) : '') +
-      (news ? '&news=1' : first ? '&top=1' : '');
+      // What's new: with the dot on, or asked for (the tour's last step).
+      (news || msg.news === true ? '&news=1' : first ? '&top=1' : '');
     chrome.tabs.create({ url: url, index: sender.tab.index + 1 });
   });
 });
@@ -574,6 +620,30 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   return true;
 });
 
+/* App checker report: the newest canvas-check-hook.js into the tab's Studio
+ * frames - a frame keeps the copy it loaded with, older after an update; the
+ * new copy takes over from it. */
+const STUDIO_FRAME = /^https:\/\/[^/]+\.gateway\.prod\.island\.powerapps\.com\//i;
+
+const STUDIO_HOOKS = { check: 'src/features/canvas-check-hook.js', code: 'src/features/canvas-code-hook.js' };
+
+async function injectStudioHook(tabId, hook) {
+  const seen = await chrome.scripting.executeScript({ target: { tabId: tabId, allFrames: true }, func: () => location.href });
+  const frameIds = seen.filter((r) => r.frameId > 0 && STUDIO_FRAME.test(r.result || '')).map((r) => r.frameId);
+  if (!frameIds.length) return { injected: 0 };
+  await chrome.scripting.executeScript({ target: { tabId: tabId, frameIds: frameIds }, files: [STUDIO_HOOKS[hook] || STUDIO_HOOKS.check], world: 'MAIN' });
+  return { injected: frameIds.length };
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (!msg || msg.type !== 'DB_STUDIO_HOOK' || !sender.tab || sender.frameId) return;
+  injectStudioHook(sender.tab.id, msg.hook).then(
+    (r) => reply(r),
+    (e) => reply({ error: String((e && e.message) || e) })
+  );
+  return true;
+});
+
 // Apply to Studio: bring the Studio tab to the front first - a background
 // tab does not render menus.
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
@@ -597,17 +667,19 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
  * are added up and written once a second at most, one write at a time, so
  * tabs counting at once do not overwrite each other. */
 const SAVED = {
-  'solution-pins': 30,
+  'solution-pins': 15,
   'table-export': 120,
   'open-all': 2,
   'auto-advanced': 2,
   'column-defaults': 2,
+  'lower-schema': 2,
   'classic-open': 60,
   'canvas-code': 900,
   'canvas-tree': 30,
   'flow-edit': 2700,
   'flow-run-export': 900,
   'flow-run-export:record': 10,
+  'flow-run-export:iteration': 900,
   'expand-all': 30,
   'form-dump': 900,
   'compare:form': 1800,
@@ -626,7 +698,11 @@ const SAVED = {
   'journey:save': 1800,
   'ado-workitem': 30,
   'ado-taskboard-expand': 30,
-  'wiki-expand': 30
+  'wiki-expand': 30,
+  'wiki-tree': 60,
+  'canvas-check': 120,
+  'any-table': 30,
+  'solution-pins:designer': 60
 };
 const SAVED_KEY = 'dynaboost.saved';
 let savedQueue = Object.create(null);

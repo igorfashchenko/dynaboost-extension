@@ -247,7 +247,7 @@
   border-bottom: 1px solid var(--db-hairline);
 }
 
-/* ---------- My solutions (pinned) ---------- */
+/* ---------- My shortcuts (pinned solutions and apps) ---------- */
 
 .db-sec-head {
   display: flex;
@@ -378,8 +378,9 @@
   margin: -3px 0 8px;
   padding: 6px 9px;
   border-radius: 6px;
-  background: #fff7e6;
-  color: #7a5410;
+  border-left: 3px solid var(--db-rose);
+  background: #fdecef;
+  color: #9b1c36;
   font: 12px "Segoe UI", system-ui, sans-serif;
 }
 
@@ -414,6 +415,16 @@
 
 .db-slot-del {
   right: 3px;
+}
+
+/* A model-driven app's third tool: the App designer. */
+.db-slot-design {
+  right: 39px;
+}
+
+.db-slot-full.db-slot-three:hover .db-slot-env,
+.db-slot-full.db-slot-three:focus-within .db-slot-env {
+  padding-right: 54px;
 }
 
 .db-slot-full:hover .db-slot-tool,
@@ -466,14 +477,145 @@
   box-shadow: 0 0 0 2px rgba(227, 176, 75, 0.35);
 }
 
-.db-slot-dragging {
-  opacity: 0.4;
+/* An app's shortcut: blue where a solution's is gold - its edge, its ✎ and
+   ✕, and its flash when it is already pinned. */
+.db-slot-full.db-slot-app,
+.db-slot-full.db-slot-app:hover,
+.db-slot-full.db-slot-app:focus-visible {
+  border-left-color: var(--db-blue-soft);
 }
 
-.db-slot-over {
-  border-color: var(--db-blue);
-  border-style: solid;
+.db-slot-app .db-slot-tool:hover,
+.db-slot-app .db-slot-tool:focus-visible {
+  border-color: var(--db-blue-soft);
+  color: var(--db-blue);
   background: var(--db-blue-tint);
+}
+
+.db-slot-app.db-slot-flash {
+  border-color: var(--db-blue-soft);
+  background: var(--db-blue-tint);
+  box-shadow: 0 0 0 2px rgba(61, 139, 255, 0.3);
+}
+
+/* Moved as the panel's tiles are: the place it will land in, dashed in its
+   colour, and a lifted copy under the pointer (.db-ghost). */
+.db-slot-full {
+  user-select: none;
+}
+
+.db-slot-full.db-drag-src,
+.db-slot-full.db-drag-src:hover {
+  border: 1px dashed var(--db-gold);
+  background: #fff7e6;
+  box-shadow: none;
+}
+
+.db-slot-full.db-slot-app.db-drag-src,
+.db-slot-full.db-slot-app.db-drag-src:hover {
+  border-color: var(--db-blue);
+  background: var(--db-blue-tint);
+}
+
+.db-slot-full.db-ghost {
+  background: var(--db-surface);
+}
+
+/* The small list "+ Add" opens in a solution that holds apps: the solution
+   (gold), then its apps (blue). Paddings and gaps in the golden ratio. */
+.db-pick {
+  position: absolute;
+  z-index: 5;
+  width: 233px;
+  padding: 8px;
+  border: 1px solid var(--db-hairline);
+  border-radius: 8px;
+  background: var(--db-surface);
+  box-shadow: 0 8px 21px rgba(10, 23, 56, 0.22);
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.db-pick-h {
+  margin: 0 5px 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--db-ink-soft);
+}
+
+.db-pick-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  margin: 0 0 3px;
+  padding: 5px 8px 5px 13px;
+  border: 1px solid transparent;
+  border-left: 3px solid var(--db-gold);
+  border-radius: 5px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--db-ink);
+}
+
+.db-pick-row:last-child {
+  margin-bottom: 0;
+}
+
+.db-pick-row.db-pick-app {
+  border-left-color: var(--db-blue-soft);
+}
+
+.db-pick-row:hover,
+.db-pick-row:focus-visible {
+  border-color: var(--db-hairline);
+  border-left-color: var(--db-gold);
+  background: var(--db-surface-sunk);
+  outline: none;
+}
+
+.db-pick-row.db-pick-app:hover,
+.db-pick-row.db-pick-app:focus-visible {
+  border-left-color: var(--db-blue-soft);
+}
+
+
+.db-pick-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.db-pick-kind {
+  font-size: 10.5px;
+  line-height: 1.25;
+  color: var(--db-ink-soft);
+}
+
+.db-pick-row.db-pick-managed {
+  opacity: 0.72;
+}
+
+.db-pick-busy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px;
+  font-size: 12px;
+  color: var(--db-ink-soft);
+}
+
+.db-pick-note {
+  margin: 0 0 5px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  background: var(--db-surface-sunk);
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--db-rose);
 }
 
 /* The one area that scrolls (see buildShell): what is in it keeps its size. */
@@ -509,6 +651,102 @@
   grid-template-columns: repeat(3, 1fr);
   gap: 9px;
   margin-bottom: 16px;
+}
+
+/* A section's name folds it, with My shortcuts' chevron: the same fold as
+   Say thanks, grid-template-rows from 1fr to 0fr. Folded, a count of its
+   tiles - and of its switches that are on, in their blue. */
+.db-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-group-toggle:hover {
+  color: var(--db-ink);
+}
+
+.db-group-toggle:focus-visible {
+  outline: 2px solid var(--db-blue-soft);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.db-group-toggle svg {
+  flex: none;
+  transition: transform 0.15s;
+}
+
+.db-group-folded .db-group-toggle svg {
+  transform: rotate(-90deg);
+}
+
+.db-group-badge {
+  flex: none;
+}
+
+.db-group:not(.db-group-folded) .db-group-badge {
+  display: none;
+}
+
+.db-group-on {
+  padding: 0 6px;
+  border: 1px solid var(--db-blue-soft);
+  border-radius: 9px;
+  background: var(--db-blue-tint);
+  color: var(--db-blue);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.db-group-fold {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s;
+}
+
+.db-group-clip {
+  min-height: 0;
+}
+
+.db-group-folded .db-group-clip,
+.db-group-moving .db-group-clip {
+  overflow: hidden;
+}
+
+.db-group-folded .db-group-fold {
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition:
+    grid-template-rows 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0s linear 0.2s;
+}
+
+.db-group-fold .db-grid {
+  transition: opacity 0.22s ease-out 0.04s;
+}
+
+.db-group-folded .db-grid {
+  opacity: 0;
+  transition: opacity 0.14s ease-in;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-group-fold,
+  .db-group-fold .db-grid,
+  .db-group-toggle svg {
+    transition-duration: 0.01s;
+  }
 }
 
 /* An action's answer (Copy work item): a card that folds down under the
@@ -2003,10 +2241,14 @@
   color: #ff7b7b;
 }
 
-#dynaboost-root.db-dark .db-sec-note,
 #dynaboost-root.db-dark .db-slot-flash {
   background: #2e2410;
   color: #f0c774;
+}
+
+#dynaboost-root.db-dark .db-sec-note {
+  background: #3a1620;
+  color: #ff9aae;
 }
 
 #dynaboost-root.db-dark .db-thanks-stripe:hover,
@@ -2016,6 +2258,34 @@
 
 #dynaboost-root.db-dark .db-slot-tool {
   background: var(--db-surface);
+}
+
+#dynaboost-root.db-dark .db-slot-full.db-slot-app:hover,
+#dynaboost-root.db-dark .db-slot-full.db-slot-app:focus-visible {
+  border-left-color: var(--db-blue-soft);
+}
+
+#dynaboost-root.db-dark .db-slot-app .db-slot-tool:hover,
+#dynaboost-root.db-dark .db-slot-app .db-slot-tool:focus-visible,
+#dynaboost-root.db-dark .db-slot-app.db-slot-flash {
+  background: var(--db-blue-tint);
+  color: var(--db-blue-soft);
+}
+
+#dynaboost-root.db-dark .db-pick {
+  box-shadow: 0 8px 21px rgba(0, 0, 0, 0.55);
+}
+
+#dynaboost-root.db-dark .db-slot-full.db-drag-src,
+#dynaboost-root.db-dark .db-slot-full.db-drag-src:hover {
+  border-color: var(--db-gold);
+  background: #2e2410;
+}
+
+#dynaboost-root.db-dark .db-slot-full.db-slot-app.db-drag-src,
+#dynaboost-root.db-dark .db-slot-full.db-slot-app.db-drag-src:hover {
+  border-color: var(--db-blue);
+  background: var(--db-blue-tint);
 }
 
 #dynaboost-root.db-dark .db-slot-tool:hover,
@@ -2188,13 +2458,14 @@
   color: #1e6bff;
 }
 
-/* ---------- My solutions dialog ---------- */
+/* ---------- My shortcuts dialog ---------- */
 
 .db-dialog.db-pins {
-  width: 440px;
+  width: 500px;
   max-width: calc(100% - 32px);
   max-height: 86%;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   font-size: 13.5px;
 }
 
@@ -2214,6 +2485,9 @@
 }
 
 .db-pin-form input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   padding: 8px 10px;
   border: 1px solid #c6d0e4;
   border-radius: 6px;
@@ -2229,8 +2503,12 @@
 
 .db-pin-fields {
   display: grid;
-  grid-template-columns: 1fr 1.4fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.618fr);
   gap: 10px;
+}
+
+.db-pin-fields > label {
+  min-width: 0;
 }
 
 .db-pin-fields[hidden] {
@@ -3577,6 +3855,56 @@
   color: #6aa2ff;
 }
 
+/* ---------- Open any table: Impersonate's dialog, and View or Form ---------- */
+
+.db-anyt-mode {
+  display: flex;
+  padding: 3px;
+  border-radius: 8px;
+  background: #eef2f9;
+}
+
+.db-anyt-mode button {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #56637f;
+  font: 600 13px "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.db-anyt-mode button:hover {
+  color: #10224e;
+}
+
+.db-anyt-mode button[aria-pressed="true"] {
+  border-color: #cfe0ff;
+  background: #ffffff;
+  color: #1e6bff;
+  box-shadow: 0 1px 3px rgba(16, 34, 78, 0.12);
+}
+
+.db-overlay.db-dark .db-anyt-mode {
+  background: #0c1325;
+}
+
+.db-overlay.db-dark .db-anyt-mode button {
+  color: #9aa8c7;
+}
+
+.db-overlay.db-dark .db-anyt-mode button:hover {
+  color: #e3e9f7;
+}
+
+.db-overlay.db-dark .db-anyt-mode button[aria-pressed="true"] {
+  border-color: #2c4a8a;
+  background: #172a55;
+  color: #6aa2ff;
+  box-shadow: none;
+}
+
 /* ---------- Impersonate on the page ----------
    Outside #dynaboost-root, so it shows while the panel is closed: a blue
    frame with a faint haze (click-through) and a tab on the bottom edge. God
@@ -3885,4 +4213,302 @@
     transform: none;
     transition: none;
   }
+}
+
+/* ---------- What's new: the tour after an update (core.js) ---------- */
+
+#dynaboost-root {
+  --db-tour-card: #ffffff;
+  --db-tour-line: #d3dbea;
+  --db-tour-ink: #10224e;
+  --db-tour-soft: #56637f;
+  --db-tour-chip: #f5f7fc;
+  --db-tour-kick: #9a6a12;
+  --db-tour-btn: #1e3a78;
+  --db-tour-btn-line: #c3cde3;
+  --db-tour-dim: rgba(6, 14, 36, 0.45);
+  --db-tour-more-bg: #fff8e8;
+  --db-tour-more-line: #e8d3a3;
+  --db-tour-more-chip: #ffffff;
+  --db-tour-more-ink: #10224e;
+}
+
+#dynaboost-root.db-dark {
+  --db-tour-card: #10224e;
+  --db-tour-line: #22356b;
+  --db-tour-ink: #eef3ff;
+  --db-tour-soft: #97a5c6;
+  --db-tour-chip: #1a2c5c;
+  --db-tour-kick: #f0c774;
+  --db-tour-btn: #cddaf6;
+  --db-tour-btn-line: #35477a;
+  --db-tour-dim: rgba(6, 14, 36, 0.6);
+  --db-tour-more-bg: rgba(227, 176, 75, 0.1);
+  --db-tour-more-line: #35477a;
+  --db-tour-more-chip: #1a2c5c;
+  --db-tour-more-ink: #cddaf6;
+}
+
+.db-panel.db-touring {
+  position: relative;
+}
+
+.db-tour-dim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: var(--db-tour-dim);
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+#dynaboost-root .db-tour-spot {
+  z-index: 6;
+  border-color: var(--db-gold);
+  box-shadow: 0 0 0 2px var(--db-gold), 0 0 0 6px rgba(227, 176, 75, 0.35), 0 0 22px rgba(227, 176, 75, 0.55);
+}
+
+/* A tool of another page: its tile stays grey, dashed in gold. */
+#dynaboost-root .db-tour-spot.db-tour-off {
+  box-shadow: 0 0 0 2px var(--db-gold), 0 0 0 6px rgba(227, 176, 75, 0.22);
+  outline: 1.5px dashed var(--db-gold);
+  outline-offset: 5px;
+}
+
+.db-tile-new {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--db-gold);
+  color: #3a2a05;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 15px;
+  letter-spacing: 0.04em;
+}
+
+.db-tour-tip .db-tile-new {
+  position: static;
+  display: inline-block;
+  vertical-align: 1px;
+}
+
+.db-tour-tip {
+  position: fixed;
+  z-index: 10;
+  width: 300px;
+  padding: 12px 14px 11px;
+  border: 1px solid var(--db-tour-line);
+  border-top: 3px solid var(--db-gold);
+  border-radius: 10px;
+  background: var(--db-tour-card);
+  color: var(--db-tour-ink);
+  box-shadow: 0 12px 32px rgba(10, 23, 56, 0.35);
+  font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
+  animation: db-toast-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Its arrow, pointing at the tile on the right. */
+.db-tour-tip::after {
+  content: "";
+  position: absolute;
+  right: -8px;
+  top: var(--db-tour-y, 26px);
+  width: 14px;
+  height: 14px;
+  background: var(--db-tour-card);
+  border-right: 1px solid var(--db-tour-line);
+  border-top: 1px solid var(--db-tour-line);
+  transform: rotate(45deg);
+}
+
+.db-tour-k {
+  flex: 1;
+  min-width: 0;
+  color: var(--db-tour-kick);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.db-tour-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: -2px;
+}
+
+.db-tour-t {
+  display: block;
+  margin: 2px 0 3px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.db-tour-p {
+  margin: 0;
+  color: var(--db-tour-soft);
+  font-size: 12.5px;
+}
+
+.db-tour-where {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 9px 0 2px;
+  padding: 5px 10px;
+  border: 1px solid var(--db-tour-line);
+  border-radius: 8px;
+  background: var(--db-tour-chip);
+  font-size: 12px;
+}
+
+.db-tour-where i {
+  color: var(--db-tour-kick);
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* The last step's card: how many more, a few of them - a click, What's new. */
+#dynaboost-root .db-tour-more {
+  display: block;
+  width: 100%;
+  margin: 10px 0 0;
+  padding: 9px 10px;
+  border: 1px solid var(--db-gold);
+  border-radius: 8px;
+  background: var(--db-tour-more-bg);
+  color: var(--db-tour-ink);
+  text-align: left;
+  font: inherit;
+}
+
+#dynaboost-root .db-tour-more:hover {
+  box-shadow: 0 0 0 3px rgba(227, 176, 75, 0.22);
+}
+
+.db-tour-more-h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.db-tour-more-h i {
+  color: var(--db-gold);
+  font-style: normal;
+}
+
+.db-tour-more-c {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.db-tour-more-c span {
+  padding: 1px 8px;
+  border: 1px solid var(--db-tour-more-line);
+  border-radius: 11px;
+  background: var(--db-tour-more-chip);
+  color: var(--db-tour-more-ink);
+  font-size: 11.5px;
+}
+
+.db-tour-more-c span.db-tour-more-rest {
+  border-style: dashed;
+  color: var(--db-tour-soft);
+}
+
+.db-tour-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.db-tour-dots {
+  flex: 1;
+  display: flex;
+  gap: 5px;
+}
+
+.db-tour-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--db-tour-line);
+}
+
+.db-tour-dots i.on {
+  background: var(--db-gold);
+}
+
+#dynaboost-root .db-tour-row button {
+  padding: 4px 11px;
+  border: 1px solid var(--db-tour-btn-line);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--db-tour-btn);
+  font-size: 12.5px;
+}
+
+#dynaboost-root .db-tour-row button:hover {
+  border-color: var(--db-gold);
+}
+
+#dynaboost-root .db-tour-row button:focus {
+  outline: none;
+}
+
+#dynaboost-root .db-tour-row button:focus-visible,
+#dynaboost-root .db-tour-x:focus-visible {
+  outline: 2px solid rgba(227, 176, 75, 0.6);
+  outline-offset: 2px;
+}
+
+#dynaboost-root .db-tour-row button.db-tour-go {
+  border-color: var(--db-gold);
+  background: var(--db-gold);
+  color: #3a2a05;
+  font-weight: 600;
+}
+
+#dynaboost-root .db-tour-row button.db-tour-go:hover {
+  background: #edc164;
+}
+
+#dynaboost-root .db-tour-x {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  /* 10 px to the gold top and to the right edge alike. */
+  margin: 0 -4px 0 0;
+  padding: 0;
+  border: 1px solid var(--db-tour-btn-line);
+  border-radius: 6px;
+  background: var(--db-tour-chip);
+  color: var(--db-tour-ink);
+}
+
+#dynaboost-root .db-tour-x svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+#dynaboost-root .db-tour-x:hover {
+  border-color: var(--db-gold);
+  background: rgba(227, 176, 75, 0.16);
+  color: var(--db-tour-ink);
 }

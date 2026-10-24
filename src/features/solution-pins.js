@@ -1,8 +1,17 @@
-/* Feature: My solutions - shortcuts to solutions at the top of the panel.
- * A shortcut is the solution's address (environment id + solution id), so
- * its name can be changed; one per solution. Three slots, six once the first
- * three are full. Stored in chrome.storage.sync, the fold state in
- * chrome.storage.local. On Azure DevOps a shortcut opens in a new tab.
+/* Feature: My shortcuts - shortcuts to solutions and apps at the top of the
+ * panel, six in all. A solution's shortcut is its address (environment id
+ * + solution id), an app's is the address it opens at (a model-driven app
+ * in Dynamics 365, a canvas app in the player), so a name can be changed;
+ * one per solution or app. Solutions are marked gold, apps blue.
+ *
+ * Pinned from where you are: a solution page pins the solution - or, when
+ * the solution holds apps (solution-apps-hook.js), a small list offers it
+ * and its apps; an app ticked in the solution's list is pinned at once. An
+ * open model-driven app pins itself. Anywhere, a pasted link to a solution
+ * or an app. Three slots, six once the first three are full. Stored in
+ * chrome.storage.sync (key unchanged: dynaboost.solutionPins), the fold
+ * state in chrome.storage.local. On Azure DevOps a shortcut opens in a new
+ * tab.
  */
 (function () {
   if (DynaBoost.off) return;
@@ -15,10 +24,15 @@
   // .../environments/{env}/solutions/{solution}. The default environment's id
   // is "Default-<guid>", so the environment part is not a bare GUID.
   const SOLUTION_URL = /\/environments\/([^/?#]+)\/solutions\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+  const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const DYNAMICS = /^[a-z0-9-]+\.crm[0-9]*\.dynamics\.com$/i;
+  const PLAYER = 'https://apps.powerapps.com';
+  const KIND = { model: 'Model-driven app', canvas: 'Canvas app' };
+  const isApp = (p) => !!p && p.kind === 'app';
 
   let pins = []; // slot index -> pin or null
   let folded = false;
-  let flash = -1; // a slot to highlight briefly (already pinned)
+  let flash = []; // slots to highlight briefly (already pinned)
   let notice = ''; // a line under the header, for a few seconds
   let noticeTimer = null;
 
@@ -41,12 +55,64 @@
     return host === 'dev.azure.com' || host.endsWith('.visualstudio.com');
   }
 
+  // ---------- the apps a solution holds (solution-apps-hook.js) ----------
+
+  let solutionApps = []; // { sol, id, name, type, host }
+  const opensAt = new Map(); // app id -> the address the Power Apps API gave
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || !e.data || e.data.source !== 'dynaboost-solution-apps') return;
+    if (Array.isArray(e.data.apps)) solutionApps = e.data.apps;
+    if (Array.isArray(e.data.opens)) e.data.opens.forEach(([id, uri]) => opensAt.set(id, uri));
+  });
+  if (location.hostname === 'make.powerapps.com') window.postMessage({ source: 'dynaboost-solution-apps-ask' }, location.origin);
+
+  // An app of a solution as a shortcut.
+  function appRef(a, env) {
+    const url =
+      a.type === 'model'
+        ? 'https://' + a.host + '/main.aspx?' + (a.unique ? 'appname=' + encodeURIComponent(a.unique) : 'appid=' + a.id)
+        : opensAt.get(a.id) || PLAYER + '/play/e/' + encodeURIComponent(env) + '/a/' + a.id;
+    return { kind: 'app', type: a.type, env: env, app: a.id, url: url, solName: a.name };
+  }
+
+  /* The apps the solution's list shows on the page, for when the portal's
+   * answer went by unseen: a model-driven app's row gives its unique name
+   * (the Name column), which opens it - main.aspx?appname=... - in the
+   * environment's Dynamics 365. Canvas apps need their id: not from here. */
+  function appsOnPage(host) {
+    if (!host) return [];
+    const out = [];
+    for (const row of document.querySelectorAll('[role="row"]')) {
+      const texts = Array.from(row.querySelectorAll('[role="gridcell"], [role="rowheader"]'))
+        .map((c) => clean(c.textContent))
+        .filter(Boolean);
+      if (!texts.some((t) => /^model-driven app$/i.test(t))) continue;
+      const unique = texts.find((t) => /^[a-z0-9]{2,8}_[a-z0-9_]+$/i.test(t));
+      const name = texts.find((t) => t !== unique && /\p{L}/u.test(t) && !/^(model-driven app|canvas app|yes|no)$/i.test(t));
+      if (unique && name) out.push({ id: unique.toLowerCase(), unique: unique, name: name, type: 'model', host: host });
+    }
+    return out;
+  }
+
+  // The rows ticked in the solution's list, by their text.
+  function tickedRows() {
+    const rows = document.querySelectorAll('[role="row"][aria-selected="true"], [role="row"]:has([role="checkbox"][aria-checked="true"]), [role="row"]:has(input[type="checkbox"]:checked)');
+    return Array.from(new Set(rows))
+      .filter((r) => !r.querySelector('[role="columnheader"]'))
+      .map((r) => clean(r.textContent).toLowerCase());
+  }
+
   // ---------- storage ----------
 
   // Drawn, not typed: a ✎ or ✕ sits off centre in most fonts.
   const PEN =
     '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 10l.6-2.4L8.2 2a1 1 0 0 1 1.4 0l.4.4a1 1 0 0 1 0 1.4L4.4 9.4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
   const CROSS = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+  // The App designer: a window with its parts laid out.
+  const DESIGN =
+    '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="1.5" y="2" width="9" height="8" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M1.5 4.6h9M4.4 4.6V10" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
+  // Only a model-driven app opens in the App designer from here.
+  const designable = (p) => isApp(p) && p.type === 'model';
 
   function normalise(list) {
     const out = [];
@@ -70,6 +136,9 @@
 
   // ---------- addresses and names ----------
 
+  /* A solution in the maker portals, a model-driven app in Dynamics 365
+   * (main.aspx?appid=...), or a canvas app in the player
+   * (apps.powerapps.com/play/e/{env}/a/{id}). */
   function parseLink(text) {
     let url;
     try {
@@ -77,13 +146,38 @@
     } catch (e) {
       return null;
     }
-    if (MAKERS.indexOf(url.origin) < 0) return null;
-    const m = url.pathname.match(SOLUTION_URL);
-    return m ? { origin: url.origin, env: m[1], sol: m[2].toLowerCase() } : null;
+    if (MAKERS.indexOf(url.origin) >= 0) {
+      const m = url.pathname.match(SOLUTION_URL);
+      return m ? { origin: url.origin, env: m[1], sol: m[2].toLowerCase() } : null;
+    }
+    if (url.protocol === 'https:' && DYNAMICS.test(url.hostname)) {
+      const app = String(url.searchParams.get('appid') || '').replace(/[{}]/g, '').toLowerCase();
+      const host = url.hostname.toLowerCase();
+      const unique = String(url.searchParams.get('appname') || '');
+      if (!GUID.test(app) && /^[a-z0-9]{2,8}_[a-z0-9_]+$/i.test(unique)) {
+        return { kind: 'app', type: 'model', env: host, app: unique.toLowerCase(), url: 'https://' + host + '/main.aspx?appname=' + encodeURIComponent(unique) };
+      }
+      if (!GUID.test(app)) return null;
+      return { kind: 'app', type: 'model', env: host, app: app, url: 'https://' + host + '/main.aspx?appid=' + app };
+    }
+    if (url.origin === PLAYER) {
+      const m = url.pathname.match(/\/play\/(?:e\/([^/]+)\/a\/)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+      if (!m) return null;
+      const tenant = url.searchParams.get('tenantId');
+      const app = m[2].toLowerCase();
+      return {
+        kind: 'app',
+        type: 'canvas',
+        env: m[1] ? decodeURIComponent(m[1]) : '',
+        app: app,
+        url: PLAYER + url.pathname.replace(/\/+$/, '') + (tenant ? '?tenantId=' + encodeURIComponent(tenant) : '')
+      };
+    }
+    return null;
   }
 
   function urlOf(pin) {
-    return pin.origin + '/environments/' + pin.env + '/solutions/' + pin.sol;
+    return isApp(pin) ? pin.url : pin.origin + '/environments/' + pin.env + '/solutions/' + pin.sol;
   }
 
   // Suggestions only - ✎ changes them.
@@ -156,49 +250,270 @@
   /* Duplicates are found by address - environment id and solution id - never
    * by name, so a shortcut you renamed is still recognised. */
   function twinOf(ref, except) {
-    return pins.findIndex(
-      (p, i) => p && i !== except && p.env.toLowerCase() === ref.env.toLowerCase() && p.sol === ref.sol
+    return pins.findIndex((p, i) =>
+      !p || i === except ? false : isApp(ref) ? isApp(p) && sameApp(p, ref) : !isApp(p) && p.env.toLowerCase() === ref.env.toLowerCase() && p.sol === ref.sol
     );
+  }
+
+  /* One app, however it was pinned: by its id, its address - or, as an app
+   * found by its id one time and by its unique name another, by its kind,
+   * environment and name. */
+  function sameApp(a, b) {
+    if (a.app === b.app || a.url === b.url) return true;
+    const host = (p) => {
+      try {
+        return new URL(p.url).hostname.toLowerCase();
+      } catch (e) {
+        return '';
+      }
+    };
+    const name = (p) => clean(p.solName).toLowerCase();
+    return a.type === b.type && !!name(a) && name(a) === name(b) && (host(a) === host(b) || String(a.env).toLowerCase() === String(b.env).toLowerCase());
   }
 
   function nameOf(pin) {
     return pin.envName + ' \u00b7 ' + pin.solName;
   }
 
-  function showDuplicate(i) {
-    flash = i;
-    notice = 'Already pinned as \u201c' + nameOf(pins[i]) + '\u201d.';
+  /* Already pinned: each shortcut it is lights up (a solution gold, an app
+   * blue) and the line under the header names them all. */
+  function showDuplicate(slots) {
+    flash = [].concat(slots).filter((i) => i >= 0 && pins[i]);
+    if (!flash.length) return;
+    const names = flash.map((i) => '\u201c' + pins[i].solName + '\u201d');
+    notice =
+      flash.length === 1
+        ? 'Already pinned as \u201c' + nameOf(pins[flash[0]]) + '\u201d.'
+        : 'All already pinned: ' + names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] + '.';
     clearTimeout(noticeTimer);
     noticeTimer = setTimeout(() => {
-      flash = -1;
+      flash = [];
       notice = '';
       DynaBoost.refresh();
     }, 3500);
     DynaBoost.refresh();
   }
 
-  function pinAt(slot) {
-    const here = parseLink(location.href);
-    if (!here) {
-      openDialog(slot, null);
-      return;
-    }
-    const twin = twinOf(here);
-    if (twin >= 0) {
-      showDuplicate(twin); // one shortcut per solution - drag it to move it
-      return;
-    }
-    const pin = Object.assign(here, { envName: guessEnvName(here.env), solName: guessSolutionName() });
-    if (!pin.envName || !pin.solName) {
-      openDialog(slot, pin); // the page did not give both names - ask
-      return;
-    }
-    pins[slot] = pin;
+  /* The open model-driven app, here in Dynamics 365: its address, and its
+   * name and the environment's from the environment itself. */
+  function appHere() {
+    if (!DYNAMICS.test(location.hostname)) return null;
+    return parseLink(location.href);
+  }
+
+  async function namesOfAppHere(ref) {
+    const get = (path) =>
+      fetch('/api/data/v9.2/' + path, { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then((r) => (r.ok ? r.json() : null));
+    const [app, org] = await Promise.all([
+      get('appmodules(' + ref.app + ')?$select=name').catch(() => null),
+      get("RetrieveCurrentOrganization(AccessType=@p)?@p=Microsoft.Dynamics.CRM.EndpointAccessType'Default'").catch(() => null)
+    ]);
+    const d = (org && org.Detail) || {};
+    return { solName: clean(app && app.name), envName: clean(d.FriendlyName) || (await envNameOfHost(ref.env)) };
+  }
+
+  // The environment's Dataverse address, by its id, from the same list.
+  function hostOfEnv(id) {
+    const k = String(id || '').toLowerCase();
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get('dynaboost.environments', (d) => {
+          const list = ((d && d['dynaboost.environments']) || {}).list || [];
+          const hit = list.find((e) => e && String(e.id).toLowerCase() === k);
+          resolve(hit ? String(hit.host).toLowerCase() : '');
+        });
+      } catch (e) {
+        resolve('');
+      }
+    });
+  }
+
+  // The environment's name as make.powerapps.com listed it (env-compare.js
+  // keeps it), by its Dataverse address or its id.
+  function envNameOfHost(key) {
+    const k = String(key || '').toLowerCase();
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get('dynaboost.environments', (d) => {
+          const list = ((d && d['dynaboost.environments']) || {}).list || [];
+          const hit = list.find((e) => e && (String(e.host).toLowerCase() === k || String(e.id).toLowerCase() === k));
+          resolve(hit ? hit.name : '');
+        });
+      } catch (e) {
+        resolve('');
+      }
+    });
+  }
+
+  // A shortcut into a slot: named by the page, or asked for when it did not say.
+  function place(slot, ref) {
+    const twin = twinOf(ref);
+    if (twin >= 0) return showDuplicate(twin); // one shortcut each - drag it to move it
+    if (!ref.envName || !ref.solName) return openDialog(slot, ref);
+    pins[slot] = ref;
     save();
+  }
+
+  /* Pin what this page is: an open app, a solution - or, in a solution that
+   * holds apps, the app ticked in its list, else a choice of the solution
+   * and its apps next to where you clicked. */
+  async function pinAt(slot, anchor) {
+    const app = appHere();
+    if (app) {
+      if (twinOf(app) >= 0) return showDuplicate(twinOf(app));
+      return place(slot, Object.assign(app, await namesOfAppHere(app)));
+    }
+    const here = parseLink(location.href);
+    if (!here) return openDialog(slot, null);
+    const sol = Object.assign(here, { envName: guessEnvName(here.env) || (await envNameOfHost(here.env)), solName: guessSolutionName() });
+    const seen = solutionApps.filter((a) => a.sol === here.sol);
+    // What the page's list shows and the portal's answer did not.
+    const host = (seen[0] && seen[0].host) || (await hostOfEnv(here.env));
+    const listed = appsOnPage(host).filter((a) => !seen.some((b) => b.name.toLowerCase() === a.name.toLowerCase()));
+    const apps = seen.concat(listed).map((a) => Object.assign(appRef(a, here.env), { envName: sol.envName }));
+    if (!apps.length) return place(slot, sol);
+    const ticked = tickedRows();
+    const picked = apps.filter((a) => ticked.some((t) => t.includes(a.solName.toLowerCase())));
+    if (ticked.length === 1 && picked.length === 1) return place(slot, picked[0]);
+    // Only what is not pinned yet: one left is pinned at once, more are offered.
+    const all = [sol].concat(apps);
+    const free = all.filter((r) => twinOf(r) < 0);
+    if (!free.length) return showDuplicate(all.map((r) => twinOf(r)));
+    if (free.length === 1) return place(slot, free[0]);
+    chooser(anchor, slot, free);
+  }
+
+  /* The small list next to the click: the solution (gold), then its apps
+   * (blue) - one click pins, Escape or a click elsewhere closes. */
+  /* A small list next to what was clicked, in the panel: a title, then
+   * rows. Escape or a click elsewhere closes it. */
+  function popover(anchor, title) {
+    const root = document.getElementById('dynaboost-root');
+    if (!root || !anchor) return null;
+    const old = root.querySelector('.db-pick');
+    if (old) old.remove();
+    const box = document.createElement('div');
+    box.className = 'db-pick';
+    box.setAttribute('role', 'menu');
+    box.innerHTML = '<div class="db-pick-h">' + esc(title) + '</div><div class="db-pick-body"></div>';
+    root.appendChild(box);
+    // Under what was clicked, its right edge with the click's - and always
+    // inside the panel.
+    const a = anchor.getBoundingClientRect();
+    const r = root.getBoundingClientRect();
+    const w = box.offsetWidth;
+    box.style.top = Math.round(a.bottom - r.top + 4) + 'px';
+    box.style.left = Math.round(Math.min(Math.max(8, a.right - r.left - w), r.width - w - 8)) + 'px';
+    const close = () => {
+      box.remove();
+      document.removeEventListener('mousedown', outside, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+    const outside = (e) => {
+      if (!box.contains(e.target)) close();
+    };
+    // Escape closes the list, not the panel under it.
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      e.preventDefault();
+      close();
+    };
+    document.addEventListener('mousedown', outside, true);
+    document.addEventListener('keydown', onKey, true);
+    return { box: box, body: box.querySelector('.db-pick-body'), close: close };
+  }
+
+  function chooser(anchor, slot, refs) {
+    const pop = popover(anchor, 'Pin to My shortcuts');
+    if (!pop) return place(slot, refs[0]);
+    const { box, close } = pop;
+    pop.body.innerHTML =
+      refs
+        .map(
+          (r, i) =>
+            '<button type="button" role="menuitem" class="db-pick-row' + (isApp(r) ? ' db-pick-app' : '') + '" data-i="' + i + '">' +
+            '<span class="db-pick-name">' + esc(r.solName || 'This solution') + '</span>' +
+            '<span class="db-pick-kind">' + (isApp(r) ? KIND[r.type] : 'Solution') + '</span></button>'
+        )
+        .join('');
+    box.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-i]');
+      if (!b || b.disabled) return;
+      close();
+      place(slot, refs[Number(b.dataset.i)]);
+    });
+    const first = box.querySelector('.db-pick-row:not([disabled])');
+    if (first) first.focus();
   }
 
   function firstFree() {
     return pins.findIndex((p) => !p);
+  }
+
+  // ---------- a model-driven app in the App designer ----------
+
+  const DEFAULT_SOLUTION = 'fd140aaf-4df4-11dd-bd17-0019b9312238';
+  const WHY = {
+    signin: 'Sign in to this environment in a tab first, then try again.',
+    unreachable: 'The environment could not be reached.'
+  };
+
+  /* The solutions the app is in - read in a tab of its environment
+   * (background.js) - next to its ✎: yours first, then the Default
+   * Solution, then the managed ones; a click opens the App designer in it. */
+  async function designer(anchor, pin) {
+    const pop = popover(anchor, 'Open in App designer');
+    if (!pop) return;
+    if (DynaBoost.status) DynaBoost.status.inPage();
+    pop.body.innerHTML = '<div class="db-pick-busy">' + (DynaBoost.status ? DynaBoost.status.html('busy') : '') + '<span>Finding the solutions it is in\u2026</span></div>';
+    let got;
+    try {
+      got = await chrome.runtime.sendMessage({ type: 'DB_ENV_APP_SOLUTIONS', host: new URL(pin.url).hostname, app: pin.app });
+    } catch (e) {
+      got = { error: e.message };
+    }
+    if (!pop.box.isConnected) return;
+    const r = got && got.result;
+    if (!r) {
+      pop.body.innerHTML = '<div class="db-pick-note">' + esc(WHY[got && got.error] || (got && got.error) || 'No answer.') + '</div>';
+      return;
+    }
+    const clean8 = (g) => String(g || '').replace(/[{}]/g, '').toLowerCase();
+    const seen = new Set();
+    const list = r.solutions
+      .filter((x) => x.isvisible !== false && x.uniquename !== 'Active' && !seen.has(clean8(x.solutionid)) && seen.add(clean8(x.solutionid)))
+      .map((x) => {
+        const id = clean8(x.solutionid);
+        const isDefault = x.uniquename === 'Default' || id === DEFAULT_SOLUTION;
+        return { id: id, name: x.friendlyname || x.uniquename, version: x.version || '', managed: !!x.ismanaged && !isDefault, isDefault: isDefault };
+      });
+    if (!list.some((x) => x.isDefault)) list.push({ id: DEFAULT_SOLUTION, name: 'Default Solution', version: '', managed: false, isDefault: true });
+    const rank = (x) => (x.managed ? 2 : x.isDefault ? 1 : 0);
+    list.sort((a, b) => rank(a) - rank(b) || String(a.name).localeCompare(String(b.name)));
+    pop.body.innerHTML = list
+      .map(
+        (x, i) =>
+          '<button type="button" role="menuitem" class="db-pick-row' + (x.managed ? ' db-pick-managed' : '') + '" data-i="' + i + '"' +
+          ' title="' + (x.managed ? 'Managed - opens to look; changes belong in an unmanaged solution' : x.isDefault ? 'A change made here is in none of your solutions' : 'Open in this solution') + '">' +
+          '<span class="db-pick-name">' + esc(x.name) + '</span>' +
+          '<span class="db-pick-kind">' + esc([x.isDefault ? 'not exported with your solutions' : x.managed ? 'managed' : 'unmanaged', x.version].filter(Boolean).join(' \u00b7 ')) + '</span></button>'
+      )
+      .join('');
+    pop.box.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-i]');
+      if (!b) return;
+      const x = list[Number(b.dataset.i)];
+      const tab = window.open('https://make.powerapps.com/e/' + encodeURIComponent(r.env) + '/s/' + x.id + '/app/edit/' + r.app, '_blank');
+      if (!tab) {
+        pop.body.insertAdjacentHTML('afterbegin', '<div class="db-pick-note">The tab was blocked. Allow pop-ups for this site and try again.</div>');
+        return;
+      }
+      pop.close();
+      DynaBoost.saved('solution-pins', 'designer');
+    });
+    const first = pop.body.querySelector('.db-pick-row');
+    if (first) first.focus();
   }
 
   // ---------- dialog: name a shortcut, or paste a link ----------
@@ -223,13 +538,13 @@
     function paint(note) {
       overlay.innerHTML =
         '<div class="db-dialog db-pins">' +
-        '<div class="db-dialog-head"><span>' + (pins[slot] && draft ? 'Rename shortcut' : 'Pin a solution') + '</span>' +
+        '<div class="db-dialog-head"><span>' + (pins[slot] && draft ? 'Rename shortcut' : draft && isApp(draft) ? 'Pin an app' : 'Pin a solution or an app') + '</span>' +
         '<button type="button" data-db="close" aria-label="Close">✕</button></div>' +
         '<form class="db-pin-form" data-db="form">' +
-        (draft ? '' : '<label>Solution link<input type="text" data-db="link" placeholder="Paste a link to a solution" autocomplete="off"></label>') +
+        (draft ? '' : '<label>Link<input type="text" data-db="link" placeholder="Paste a link to a solution or an app" autocomplete="off"></label>') +
         '<div class="db-pin-fields"' + (draft ? '' : ' hidden') + '>' +
         '<label>Environment<input type="text" data-db="env" maxlength="60" autocomplete="off"></label>' +
-        '<label>Solution<input type="text" data-db="sol" maxlength="80" autocomplete="off"></label>' +
+        '<label>' + (draft && isApp(draft) ? 'App' : 'Solution') + '<input type="text" data-db="sol" maxlength="80" autocomplete="off"></label>' +
         '</div>' +
         '<div class="db-pin-note" data-db="note">' + esc(note || (draft ? 'Short names read best on the shortcut.' : '')) + '</div>' +
         '<div class="db-dialog-actions"><button type="submit" class="db-primary" data-db="save"' + (draft ? '' : ' disabled') + '>Save</button></div>' +
@@ -246,7 +561,7 @@
         link.addEventListener('input', () => {
           const parsed = parseLink(link.value);
           if (!parsed) {
-            q('note').textContent = link.value.trim() ? 'Not a solution link from make.powerapps.com or make.powerautomate.com.' : '';
+            q('note').textContent = link.value.trim() ? 'Not a link to a solution (make.powerapps.com, make.powerautomate.com) or an app (Dynamics 365, apps.powerapps.com).' : '';
             return;
           }
           const twin = twinOf(parsed, slot);
@@ -254,7 +569,12 @@
             q('note').textContent = 'Already pinned as \u201c' + nameOf(pins[twin]) + '\u201d.';
             return;
           }
-          draft = Object.assign(parsed, { envName: guessEnvName(parsed.env), solName: '' });
+          draft = Object.assign(parsed, { envName: isApp(parsed) ? '' : guessEnvName(parsed.env), solName: '' });
+          if (isApp(parsed) && parsed.type === 'model') {
+            envNameOfHost(parsed.env).then((n) => {
+              if (n && draft === parsed && !q('env').value) q('env').value = n;
+            });
+          }
           paint();
         });
       }
@@ -262,7 +582,7 @@
         e.preventDefault();
         if (!draft) return;
         const envName = clean(q('env').value) || 'Environment';
-        const pin = Object.assign({}, draft, { envName: envName, solName: clean(q('sol').value) || 'Solution' });
+        const pin = Object.assign({}, draft, { envName: envName, solName: clean(q('sol').value) || (isApp(draft) ? 'App' : 'Solution') });
         pins[slot] = pin;
         // One environment, one name: renaming it renames it on every shortcut.
         pins.forEach((p) => {
@@ -282,22 +602,22 @@
   function draw(box) {
     if (!applies()) return;
     const count = pins.filter(Boolean).length;
-    const here = parseLink(location.href);
+    const here = appHere() || parseLink(location.href);
 
     const head = document.createElement('div');
     head.className = 'db-sec-head' + (folded ? ' db-sec-folded' : '');
     head.innerHTML =
       '<button type="button" class="db-sec-toggle" aria-expanded="' + !folded + '">' + CHEVRON +
-      '<span>My solutions</span><span class="db-sec-count">' + count + '</span></button>' +
-      (!folded && count < MAX ? '<button type="button" class="db-sec-add" title="' + (here ? 'Pin this solution in the first free slot' : 'Pin a solution from its link') + '">+ Add</button>' : '');
+      '<span>My shortcuts</span><span class="db-sec-count">' + count + '</span></button>' +
+      (!folded && count < MAX
+        ? '<button type="button" class="db-sec-add" title="' + (here ? (isApp(here) ? 'Pin this app' : 'Pin this solution - or one of its apps') + ' in the first free slot' : 'Pin a solution or an app from its link') + '">+ Add</button>'
+        : '');
     head.querySelector('.db-sec-toggle').addEventListener('click', () => setFolded(!folded));
     const add = head.querySelector('.db-sec-add');
     if (add) {
       add.addEventListener('click', () => {
-        const twin = here ? twinOf(here) : -1;
-        if (twin >= 0) return showDuplicate(twin);
         const slot = firstFree();
-        if (slot >= 0) pinAt(slot);
+        if (slot >= 0) pinAt(slot, add);
       });
     }
     box.appendChild(head);
@@ -308,6 +628,9 @@
       box.appendChild(note);
     }
     if (folded) return;
+    // Redrawn while a shortcut is held (a message going, a change from
+    // another tab): the slots being sorted stay as they are.
+    if (drag && drag.on) return void box.appendChild(drag.grid);
 
     // Three slots; all six once the first three are taken (or anything sits
     // in the second row).
@@ -322,16 +645,16 @@
 
   function fullSlot(i, pin) {
     const el = document.createElement('div');
-    el.className = 'db-slot db-slot-full' + (i === flash ? ' db-slot-flash' : '');
-    el.draggable = true;
+    el.className = 'db-slot db-slot-full' + (isApp(pin) ? ' db-slot-app' : '') + (designable(pin) ? ' db-slot-three' : '') + (flash.includes(i) ? ' db-slot-flash' : '');
     el.tabIndex = 0;
     el.setAttribute('role', 'link');
     el.dataset.slot = i;
-    el.title = pin.envName + '\n' + pin.solName + '\n\nClick to open · Ctrl+click for a new tab · drag to move';
+    el.title = pin.envName + '\n' + pin.solName + (isApp(pin) ? ' (' + KIND[pin.type] + ')' : '') + '\n\nClick to open · Ctrl+click for a new tab · drag to move';
     el.innerHTML =
       '<span class="db-slot-env">' + esc(pin.envName) + '</span>' +
       '<span class="db-slot-sol">' + esc(pin.solName) + '</span>' +
       // Rename top-left, remove top-right: far apart, so a slip does not delete.
+      (designable(pin) ? '<button type="button" class="db-slot-tool db-slot-design" data-act="design" title="Open in App designer" aria-label="Open in App designer">' + DESIGN + '</button>' : '') +
       '<button type="button" class="db-slot-tool db-slot-edit" data-act="edit" title="Rename" aria-label="Rename">' + PEN + '</button>' +
       '<button type="button" class="db-slot-tool db-slot-del" data-act="del" title="Remove" aria-label="Remove">' + CROSS + '</button>';
     const go = (e) => {
@@ -345,22 +668,14 @@
       location.assign(url);
     };
     el.addEventListener('click', (e) => {
+      if (Date.now() - dragDone < 400) return; // the end of a drag, not a click
       const act = e.target.closest('[data-act]');
       if (!act) return go(e);
       e.stopPropagation();
+      if (act.dataset.act === 'design') return designer(act, pin);
       if (act.dataset.act === 'del') {
-        // A slip of the mouse is undone from the message.
-        const gone = pins[i];
         pins[i] = null;
         save();
-        DynaBoost.toast('Removed from My solutions', gone.solName + ' · ' + gone.envName, false, {
-          label: 'Undo',
-          run: () => {
-            if (pins[i]) return;
-            pins[i] = gone;
-            save();
-          }
-        });
       } else {
         openDialog(i, Object.assign({}, pin));
       }
@@ -371,13 +686,7 @@
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') go(e);
     });
-    el.addEventListener('dragstart', (e) => {
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/x-dynaboost-slot', String(i));
-      el.classList.add('db-slot-dragging');
-    });
-    el.addEventListener('dragend', () => el.classList.remove('db-slot-dragging'));
-    dropTarget(el, i);
+    el.addEventListener('pointerdown', (e) => grab(e, el));
     return el;
   }
 
@@ -408,31 +717,163 @@
     el.type = 'button';
     el.className = 'db-slot db-slot-empty';
     el.dataset.slot = i;
-    el.title = here ? 'Pin this solution here' : 'Pin a solution here from its link';
+    el.title = here ? (isApp(here) ? 'Pin this app here' : 'Pin this solution - or one of its apps - here') : 'Pin a solution or an app here from its link';
     el.innerHTML = '<span class="db-slot-plus">+</span><span class="db-slot-hint">' + (here ? 'Pin here' : 'Paste link') + '</span>';
-    el.addEventListener('click', () => pinAt(i));
-    dropTarget(el, i);
+    el.addEventListener('click', () => pinAt(i, el));
     return el;
   }
 
-  // Drop on a slot: into it if empty, swap if taken.
-  function dropTarget(el, i) {
-    el.addEventListener('dragover', (e) => {
-      if (!e.dataTransfer.types.includes('text/x-dynaboost-slot')) return;
-      e.preventDefault();
-      el.classList.add('db-slot-over');
+  // ---------- moving a shortcut ----------
+
+  /* As the panel's tiles are arranged (core.js, "arranging"): a press that
+   * moves a few pixels lifts the shortcut - a tilted copy follows the
+   * pointer and a dashed place stays behind. Over another slot it takes
+   * that place, and those between shift by one, gliding - empty slots
+   * too. Let go, the copy settles into the place and the order is kept;
+   * Esc puts it back. Once lifted, the panel holds the pointer, so the drag
+   * goes on over the page and its frames - not before, or a plain click
+   * would not reach the shortcut. */
+  let drag = null; // { el, grid, panel, id, x, y, px, py, on, order, ghost, dx, dy, landing }
+  let dragDone = 0; // when the last drag ended
+  const still = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const slotsOf = (grid) => Array.from(grid.children);
+
+  function grab(e, el) {
+    if (drag || e.button !== 0 || e.target.closest('[data-act]')) return;
+    const panel = el.closest('.db-panel');
+    if (!panel) return;
+    drag = { el: el, grid: el.parentElement, panel: panel, id: e.pointerId, x: e.clientX, y: e.clientY, px: e.clientX, py: e.clientY, on: false };
+    window.addEventListener('pointermove', dragMove, true);
+    window.addEventListener('pointerup', dragUp, true);
+    window.addEventListener('pointercancel', dragCancel, true);
+    window.addEventListener('lostpointercapture', dragUp, true);
+    window.addEventListener('keydown', dragKey, true);
+  }
+
+  function dragMove(e) {
+    if (!drag || drag.landing || e.pointerId !== drag.id) return;
+    drag.px = e.clientX;
+    drag.py = e.clientY;
+    if (!drag.on) {
+      if (Math.hypot(drag.px - drag.x, drag.py - drag.y) < 5) return;
+      if (!drag.el.isConnected) return endDrag(true); // redrawn under the press
+      lift();
+    }
+    follow();
+    sortUnder();
+  }
+
+  const dragUp = (e) => drag && e.pointerId === drag.id && endDrag(false);
+  const dragCancel = (e) => drag && e.pointerId === drag.id && endDrag(true);
+  function dragKey(e) {
+    if (e.key !== 'Escape' || !drag || !drag.on) return;
+    // Esc puts the shortcut back - and leaves the panel open.
+    e.preventDefault();
+    e.stopPropagation();
+    endDrag(true);
+  }
+
+  function lift() {
+    const el = drag.el;
+    const r = el.getBoundingClientRect();
+    drag.on = true;
+    drag.dx = drag.x - r.left;
+    drag.dy = drag.y - r.top;
+    drag.order = slotsOf(drag.grid).map((n) => Number(n.dataset.slot));
+    const ghost = el.cloneNode(true);
+    ghost.removeAttribute('tabindex');
+    ghost.removeAttribute('role');
+    ghost.classList.add('db-ghost');
+    ghost.setAttribute('aria-hidden', 'true');
+    ghost.style.width = r.width + 'px';
+    ghost.style.height = r.height + 'px';
+    drag.panel.parentElement.appendChild(ghost);
+    drag.ghost = ghost;
+    el.classList.add('db-drag-src');
+    drag.panel.classList.add('db-dragging');
+    try {
+      drag.panel.setPointerCapture(drag.id);
+    } catch (err) {
+      /* moves over the panel still reach it */
+    }
+  }
+
+  // Tilted a little, as if lifted.
+  function follow() {
+    drag.ghost.style.transform = 'translate(' + (drag.px - drag.dx) + 'px, ' + (drag.py - drag.dy) + 'px) rotate(2deg)';
+  }
+
+  // Over another slot it takes its place. One still gliding is not a target.
+  function sortUnder() {
+    const node = drag.el;
+    const items = slotsOf(drag.grid);
+    const x = drag.px;
+    const y = drag.py;
+    const to = items.find((n) => {
+      if (n === node || n.getAnimations().length) return false;
+      const r = n.getBoundingClientRect();
+      return x >= r.left && x < r.right && y >= r.top && y < r.bottom;
     });
-    el.addEventListener('dragleave', () => el.classList.remove('db-slot-over'));
-    el.addEventListener('drop', (e) => {
-      el.classList.remove('db-slot-over');
-      const from = Number(e.dataTransfer.getData('text/x-dynaboost-slot'));
-      if (Number.isNaN(from) || from === i) return;
-      e.preventDefault();
-      const moving = pins[from];
-      pins[from] = pins[i];
-      pins[i] = moving;
-      save();
+    if (!to) return;
+    const was = items.map((n) => n.getBoundingClientRect());
+    if (items.indexOf(to) > items.indexOf(node)) to.after(node);
+    else to.before(node);
+    if (still()) return;
+    items.forEach((n, i) => {
+      if (n === node) return;
+      const b = n.getBoundingClientRect();
+      glide(n, was[i].left - b.left, was[i].top - b.top);
     });
+  }
+
+  function glide(node, dx, dy) {
+    if (!dx && !dy) return;
+    node.getAnimations().forEach((a) => a.cancel());
+    node.animate([{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }], { duration: 180, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+  }
+
+  function endDrag(cancel) {
+    const d = drag;
+    if (!d || d.landing) return;
+    window.removeEventListener('pointermove', dragMove, true);
+    window.removeEventListener('pointerup', dragUp, true);
+    window.removeEventListener('pointercancel', dragCancel, true);
+    window.removeEventListener('lostpointercapture', dragUp, true);
+    window.removeEventListener('keydown', dragKey, true);
+    if (!d.on) {
+      drag = null;
+      return;
+    }
+    d.landing = true;
+    dragDone = Date.now();
+    try {
+      if (d.panel.hasPointerCapture(d.id)) d.panel.releasePointerCapture(d.id);
+    } catch (err) {
+      /* already released */
+    }
+    const order = slotsOf(d.grid).map((n) => Number(n.dataset.slot));
+    const changed = !cancel && order.join() !== d.order.join();
+    const land = () => {
+      drag = null;
+      d.ghost.remove();
+      d.el.classList.remove('db-drag-src');
+      d.panel.classList.remove('db-dragging');
+      if (changed) {
+        const was = pins.slice();
+        order.forEach((from, at) => {
+          pins[at] = was[from];
+        });
+        flash = flash.map((f) => order.indexOf(f)).filter((f) => f >= 0);
+        save();
+      } else {
+        DynaBoost.refresh();
+      }
+    };
+    if (cancel || still() || !d.el.isConnected || !d.ghost.animate) return land();
+    const to = d.el.getBoundingClientRect();
+    d.ghost
+      .animate([{ transform: d.ghost.style.transform }, { transform: 'translate(' + to.left + 'px, ' + to.top + 'px) rotate(0deg)' }], { duration: 150, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' })
+      .finished.then(land, land);
   }
 
   // ---------- boot ----------

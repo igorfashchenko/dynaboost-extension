@@ -13,7 +13,14 @@
  *   draft   - the flow's unpublished draft in Dataverse, if it has one
  *   publish - publishes that draft, as Publish in the designer does
  *   ready   - which of the APIs it has seen
+ *   repetitions - for Export run: each iteration of the given actions of a
+ *             run of this flow (Apply to each, Do until) - read only
  * The header never leaves the page.
+ *
+ * A flow made new in the designer keeps its address (.../flows/new/...)
+ * after it is saved. The id the save gives it - a PATCH or PUT of
+ * .../flows/{id}, or the answer to the POST that created it - is passed to
+ * the content script (dynaboost-flow-saved), so Edit flow knows the flow.
  *
  * Solution flows have drafts: saved in the designer, kept in Dataverse, not
  * seen by the APIs that get and save use - those see the published flow
@@ -64,17 +71,64 @@
     return null;
   }
 
+  // Saves of a flow to the Flow API or the Power Platform API: the flow's id.
+  const SAVED_ONE = /\/flows\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?(?:[?#]|$)/i;
+  const CREATED = /\/flows\/?(?:[?#]|$)/i;
+  const apiHost = (url) => {
+    try {
+      const h = new URL(url, location.href).hostname;
+      return FLOW.test(h) || PP.test(h);
+    } catch (e) {
+      return false;
+    }
+  };
+  function saved(id) {
+    if (GUID.test(id || '')) window.postMessage({ source: 'dynaboost-flow-saved', flow: id.toLowerCase() }, location.origin);
+  }
+  // method, url: a request; text: the answer to a create.
+  function watchSave(method, url, text) {
+    if (!url || !apiHost(url)) return;
+    const m = String(method || 'GET').toUpperCase();
+    const one = SAVED_ONE.exec(new URL(url, location.href).pathname);
+    if (one && (m === 'PATCH' || m === 'PUT')) return saved(one[1]);
+    if (m === 'POST' && text !== undefined && CREATED.test(new URL(url, location.href).pathname)) {
+      try {
+        saved(JSON.parse(text).name);
+      } catch (e) {
+        /* not JSON */
+      }
+    }
+  }
+
+  // The page's own request is started a moment later, from a native function
+  // rather than from here: one the page's CSP blocks is then not put on
+  // DynaBoost's list of errors - Chrome files an error under the extension
+  // whose code is on its stack. The answer is the same promise as before.
+  const unblamed = (fetch, args) => Promise.resolve().then(Function.prototype.apply.bind(fetch, window, Array.from(args)));
+
   const origFetch = window.fetch;
   if (typeof origFetch === 'function') {
     window.fetch = function (input, init) {
+      let url;
+      let method;
       try {
-        const url = typeof input === 'string' ? input : input && input.url;
+        url = typeof input === 'string' ? input : input && input.url;
+        method = (init && init.method) || (input && typeof input !== 'string' && input.method) || 'GET';
         const auth = headerOf(init && init.headers) || (input && typeof input !== 'string' ? headerOf(input.headers) : null);
         note(url, auth);
+        watchSave(method, url);
       } catch (e) {
         /* never in the portal's way */
       }
-      return origFetch.apply(this, arguments);
+      const p = unblamed(origFetch, arguments);
+      try {
+        if (String(method).toUpperCase() === 'POST' && apiHost(url) && CREATED.test(new URL(url, location.href).pathname)) {
+          p.then((res) => (res.ok ? res.clone().text().then((t) => watchSave('POST', url, t)) : null)).catch(() => {});
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      return p;
     };
   }
 
@@ -82,6 +136,21 @@
   const origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
   XMLHttpRequest.prototype.open = function (method, url) {
     this.__dbFlowUrl = url;
+    try {
+      watchSave(method, url);
+      if (String(method).toUpperCase() === 'POST' && apiHost(url) && CREATED.test(new URL(url, location.href).pathname) && !this.__dbFlowSaveListening) {
+        this.__dbFlowSaveListening = true;
+        this.addEventListener('load', () => {
+          try {
+            if (this.status >= 200 && this.status < 300) watchSave('POST', this.__dbFlowUrl, this.responseText);
+          } catch (e) {
+            /* ignore */
+          }
+        });
+      }
+    } catch (e) {
+      /* never in the portal's way */
+    }
     return origOpen.apply(this, arguments);
   };
   XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
@@ -220,6 +289,81 @@
     return { errors: list(got[0]), warnings: list(got[1]) };
   }
 
+  /* Every iteration of an action inside a loop: its status, error, times and
+   * the links to its inputs and outputs - the same answer the run view gets
+   * when you page through a loop. The Flow API first, the Power Platform API
+   * otherwise; an action that cannot be read says why, the others still come. */
+  const RUN = /^[\w.-]{1,120}$/;
+  const MAX_PAGES = 100;
+
+  async function repetitionsOf(env, id, run, name) {
+    const path = '/runs/' + encodeURIComponent(run) + '/actions/' + encodeURIComponent(name) + '/repetitions';
+    const tries = [];
+    if (flow) tries.push([flow, legacyPath(env, id) + path + '?api-version=2016-11-01']);
+    const p = ppFor(env);
+    if (p) tries.push([p, 'powerautomate/flows/' + id + path + '?api-version=1']);
+    if (!tries.length) throw Object.assign(new Error('not ready'), { code: 'no-auth' });
+    let last;
+    for (const [api, first] of tries) {
+      try {
+        const out = [];
+        let more = false;
+        let page = await call(api, 'GET', first);
+        for (let n = 1; ; n++) {
+          out.push.apply(out, list(page));
+          const next = page && page.nextLink;
+          if (!next) break;
+          const u = new URL(next);
+          // Only further pages of the same answer, from the same host - and
+          // not without end: more says there were pages left.
+          if (n >= MAX_PAGES || u.protocol + '//' + u.host + '/' !== api.base) {
+            more = true;
+            break;
+          }
+          page = await call(api, 'GET', u.pathname.slice(1) + u.search);
+        }
+        const items = out.map((r) => {
+          const q = (r && r.properties) || {};
+          return {
+            indexes: (q.repetitionIndexes || []).map((x) => ({ scope: x.scopeName, index: x.itemIndex })),
+            status: q.status,
+            code: q.code,
+            error: q.error,
+            startTime: q.startTime,
+            endTime: q.endTime,
+            retries: q.retryHistory,
+            inputs: q.inputs,
+            outputs: q.outputs,
+            inputsLink: q.inputsLink,
+            outputsLink: q.outputsLink
+          };
+        });
+        return { items: items, more: more };
+      } catch (e) {
+        last = e;
+      }
+    }
+    throw last;
+  }
+
+  async function repetitions(env, id, run, names) {
+    if (!RUN.test(run || '')) throw new Error('No run on this page.');
+    const todo = (Array.isArray(names) ? names : []).filter((n) => typeof n === 'string' && n && n.length <= 200).slice(0, 60);
+    const out = {};
+    for (let i = 0; i < todo.length; i += 4) {
+      await Promise.all(
+        todo.slice(i, i + 4).map(async (name) => {
+          try {
+            out[name] = Object.assign({ ok: true }, await repetitionsOf(env, id, run, name));
+          } catch (e) {
+            out[name] = { ok: false, error: String((e && e.message) || e), code: e && e.code, status: e && e.status };
+          }
+        })
+      );
+    }
+    return out;
+  }
+
   async function handle(d) {
     if (d.op === 'ready') return { pp: pp.size > 0, flow: !!flow, dv: !!dv };
     if (!GUID.test(d.flow || '') || !ENV.test(d.env || '')) throw new Error('No flow on this page.');
@@ -236,6 +380,7 @@
     }
     if (d.op === 'check') return check(d.env, d.flow, d.body && d.body.definition);
     if (d.op === 'draft') return draftOf(d.flow);
+    if (d.op === 'repetitions') return repetitions(d.env, d.flow, d.body && d.body.run, d.body && d.body.actions);
     if (d.op === 'publish') {
       await publish(d.flow, !!(d.body && d.body.on));
       return { ok: true };

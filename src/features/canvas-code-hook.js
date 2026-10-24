@@ -12,12 +12,20 @@
  * the way and closed again. Every step goes into a log the editor shows.
  *
  * Messages are accepted from, and replies sent to, make.powerapps.com only.
+ *
+ * Versioned, as canvas-check-hook.js: after an update the frame still runs
+ * the copy it was given at load, so canvas-code.js asks for the version and
+ * has background.js add this one; a newer copy takes over and an older one
+ * steps aside. The first copies spoke as 'dynaboost-canvas-code' and cannot
+ * step aside, so this one speaks under another name.
  */
 (function () {
-  if (window.__dynaboostCanvasHook) return;
-  window.__dynaboostCanvasHook = true;
+  const VERSION = 3;
+  if ((window.__dynaboostCodeHookV || 0) >= VERSION) return;
+  window.__dynaboostCodeHookV = VERSION;
+  const current = () => window.__dynaboostCodeHookV === VERSION;
 
-  const SRC = 'dynaboost-canvas-code';
+  const SRC = 'dynaboost-canvas-code-v';
   const PARENT = 'https://make.powerapps.com';
 
   function isEditor(v) {
@@ -184,8 +192,12 @@
     return out;
   }
 
+  // The screens: the top level of the tree, without App and the host
+  // objects an embedded app has beside its screens (a canvas app in a
+  // model-driven form has ModelDrivenFormIntegration there).
+  const NOT_SCREENS = /^(App|Host|ModelDrivenFormIntegration|SharePointIntegration|TeamsIntegration)$/;
   function screens() {
-    return Array.from(document.querySelectorAll('.pa-tree-row')).filter((r) => levelOf(r) === 1 && r.getAttribute('aria-label') !== 'App');
+    return Array.from(document.querySelectorAll('.pa-tree-row')).filter((r) => levelOf(r) === 1 && !NOT_SCREENS.test(r.getAttribute('aria-label') || ''));
   }
 
   // Collapsed branches have no rows in the DOM. Studio's own "Expand all"
@@ -294,6 +306,62 @@
     return ev.defaultPrevented;
   }
 
+  /* Studio's answer to code it cannot take: an Error dialog ("There's
+   * something wrong with the pasted code") with the parser's details behind
+   * Show more. Read and closed; '' once the pasted control is in the tree, or
+   * when no such dialog comes. */
+  const DIALOGS = '[role="dialog"], [role="alertdialog"], .ms-Dialog-main';
+  const REFUSED = /pasted code|wklejon|\bPA\d{4}\b|Source Code schema/i;
+  const dialogs = () => new Set(document.querySelectorAll(DIALOGS));
+
+  async function refusal(before, names, log) {
+    for (let i = 0; i < 20; i++) {
+      await sleep(100);
+      const dlg = Array.from(document.querySelectorAll(DIALOGS)).find((d) => !before.has(d) && REFUSED.test(d.textContent || ''));
+      if (!dlg) {
+        if (names.length && rowOf(names[0])) return '';
+        continue;
+      }
+      const more = Array.from(dlg.querySelectorAll('button, [role="button"]')).find((b) => /^(Show more|Pokaż więcej)$/i.test(b.textContent.trim()));
+      if (more) {
+        more.click();
+        await sleep(250);
+      }
+      const text = Array.from(dlg.querySelectorAll('textarea')).map((t) => t.value).join('\n') || dlg.innerText || dlg.textContent || '';
+      const m = text.match(/Details:\s*([\s\S]*?)(?:\n\s*Note:|\n\s*Session ID|$)/i);
+      const details = (m ? m[1] : text).trim().split(/\s*\n\s*/).filter(Boolean).join(' · ').slice(0, 600) || 'no details';
+      const close =
+        Array.from(dlg.querySelectorAll('button')).find((b) => /^(Close|Zamknij|OK)$/i.test(b.textContent.trim())) ||
+        dlg.querySelector('button[aria-label="Close"], button[aria-label="Zamknij"]');
+      if (close) close.click();
+      else closeMenus();
+      log.push('Studio refused the paste: ' + details);
+      await sleep(200);
+      return details;
+    }
+    return '';
+  }
+
+  /* The paste refused: what was deleted for it comes back with Studio's own
+   * Undo - once per control deleted, until each is in the tree again. */
+  async function undoDeletes(names, log) {
+    const back = () => names.filter((n) => rowOf(n));
+    for (let i = 0; i < names.length && back().length < names.length; i++) {
+      const had = back().length;
+      const btn = Array.from(document.querySelectorAll('button[aria-label], [role="menuitem"][aria-label]')).find(
+        (b) => /^(Undo|Cofnij)\b/i.test(b.getAttribute('aria-label')) && !b.disabled && b.getAttribute('aria-disabled') !== 'true'
+      );
+      if (btn) btn.click();
+      else (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', ctrlKey: true, bubbles: true, cancelable: true }));
+      log.push('undo ' + (i + 1) + (btn ? '' : ' (Ctrl+Z)'));
+      for (let k = 0; k < 10 && back().length === had; k++) await sleep(100);
+    }
+    if (back().length < names.length) await expandAll(log);
+    const now = back();
+    log.push(now.length === names.length ? 'deleted controls are back: ' + now.join(', ') : 'back: ' + (now.join(', ') || 'none') + ' of ' + names.join(', '));
+    return now;
+  }
+
   /* Every control in the pasted code should now be in the tree. Studio drops
    * what it cannot create (an unknown control or version) without a word, so
    * this is the one place that says which. */
@@ -376,8 +444,8 @@
     let parent = found.length ? parentOf(rowOf(found[0])) : null;
     if (!parent && screenHint) parent = rowOf(screenHint);
     if (!parent) {
-      const sel = document.querySelector('.pa-tree-row[aria-selected="true"]');
-      if (sel) parent = levelOf(sel) === 1 ? sel : screenOf(sel);
+      const sel = document.querySelector('.pa-tree-row[aria-selected="true"], .pa-tree-row[aria-current="true"], .pa-tree-row.is-selected');
+      if (sel && !NOT_SCREENS.test(sel.getAttribute('aria-label') || '')) parent = levelOf(sel) === 1 ? sel : screenOf(sel);
     }
     if (!parent) {
       const only = screens();
@@ -396,7 +464,14 @@
       if (r !== 'ok') return { error: r, name: n, deleted: deleted };
       deleted.push(n);
     }
-    if (!(await pasteInto(parentName, yaml, log)) && !rowOf(parentName)) return { error: 'no-screen', deleted: deleted };
+    const before = dialogs();
+    const took = await pasteInto(parentName, yaml, log);
+    const refused = await refusal(before, names, log);
+    if (refused) {
+      const back = deleted.length ? await undoDeletes(deleted, log) : [];
+      return { error: 'paste-refused', message: refused, deleted: deleted.filter((n) => back.indexOf(n) < 0), restored: back };
+    }
+    if (!took && !rowOf(parentName)) return { error: 'no-screen', deleted: deleted };
     const v = await verify(names, allNames, log);
     let inPlace = true;
     if (rowOf(names[0]) && oldIndex >= 0 && names.length) inPlace = await reorder(names[0], parentName, oldIndex, log);
@@ -431,7 +506,15 @@
       if (r !== 'ok') return { error: r, name: n, deleted: deleted };
       deleted.push(n);
     }
-    if (yaml.trim()) await pasteInto(name, yaml, log);
+    if (yaml.trim()) {
+      const before = dialogs();
+      await pasteInto(name, yaml, log);
+      const refused = await refusal(before, names, log);
+      if (refused) {
+        const back = deleted.length ? await undoDeletes(deleted, log) : [];
+        return { error: 'paste-refused', message: refused, deleted: deleted.filter((n) => back.indexOf(n) < 0), restored: back };
+      }
+    }
     const v = await verify(names, allNames, log);
     return { ok: true, screen: name, parent: name, deleted: deleted, pasted: v.ok, missing: v.missing, inPlace: true, focus: name, renamed: {} };
   }
@@ -494,7 +577,11 @@
   window.addEventListener('message', async (e) => {
     if (e.origin !== PARENT) return;
     const d = e.data;
-    if (!d || d.source !== SRC) return;
+    if (!d || d.source !== SRC || !current()) return;
+    if (d.type === 'hello') {
+      e.source.postMessage({ source: SRC, type: 'hello', nonce: d.nonce, version: VERSION }, PARENT);
+      return;
+    }
     if (d.type === 'tree') {
       let result;
       try {

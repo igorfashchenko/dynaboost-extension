@@ -52,8 +52,11 @@
   const SHOW_ALL_KEY = 'dynaboost.showAll';
   const THEME_KEY = 'dynaboost.theme'; // { mode, browser }: the header button's choice, and the browser's mode it was made in
   const HELP_TILES_KEY = 'dynaboost.helpTiles'; // the tiles' names and icons, for the help page
+  const FOLDED_KEY = 'dynaboost.folded'; // the names of the sections folded shut, on every site
   const LAYOUT_KEY = 'dynaboost.layout'; // { v: 2, sites: { <site>: { groups, tiles } } }: the order the panel was arranged in, per site
   const NEWS_KEY = 'dynaboost.whatsNew'; // the version DynaBoost was updated to, until What's new is opened (background.js)
+  const TOUR_KEY = 'dynaboost.tour'; // the version updated to, until its tour of what is new is ended (background.js)
+  const TOUR_NEW_KEY = 'dynaboost.tourNew'; // { v, ids }: the tour's tiles still wearing NEW
   const ICON_URL = chrome.runtime.getURL('icons/icon48.png');
 
   // ---------- after an update ----------
@@ -187,6 +190,7 @@
   let showAll = false;
   let layout = { groups: [], tiles: [] }; // this site's order - see "arranging"
   let layouts = {}; // every site's
+  let foldedGroups = new Set(); // section names - see foldHead()
   let arranging = false;
   let stateLoaded = false;
   let root = null;
@@ -423,7 +427,7 @@
   let saved = null;
   let savedSeen = null;
 
-  const toolName = (id) => (id === 'solution-pins' ? 'My solutions' : (features.find((f) => f.id === id) || {}).name || id);
+  const toolName = (id) => (id === 'solution-pins' ? 'My shortcuts' : (features.find((f) => f.id === id) || {}).name || id);
 
   function showSaved(animate) {
     const clock = refs && refs.saved;
@@ -679,7 +683,7 @@
 
   /* The (i) in the header: src/help.html at the tools of this page, with the
    * tiles' names and icons - or at What's new, with the dot on. */
-  async function openHelp() {
+  async function openHelp(news) {
     const here = features.filter(usable).map((f) => f.id);
     if (refs && refs.top.childElementCount) here.push('solution-pins');
     try {
@@ -687,8 +691,161 @@
     } catch (e) {
       /* the page reads without the icons */
     }
-    send({ type: 'DB_OPEN_HELP', here: here, dark: isDark(), page: pageKind() }).catch(() => {});
+    send({ type: 'DB_OPEN_HELP', here: here, dark: isDark(), page: pageKind(), news: news === true }).catch(() => {});
     setPanel(false);
+  }
+
+  // ---------- what's new: a short tour after an update ----------
+
+  /* After an update (background.js sets dynaboost.tour) the first panel
+   * opened shows what is new: a few new tools one by one - the tile glowing,
+   * a bubble beside it; a tool of another page has its tile shown for the
+   * moment, dashed, with where it works; the last one says what else is new
+   * and leads to What's new. Skip, the ×, What's new or closing the panel
+   * ends it, in every tab, until the next update. The tour's tiles wear a
+   * gold NEW until each is used once. The steps are TOUR's - a few of the
+   * release's tools. */
+  const TOUR = {
+    v: '2.41',
+    steps: [
+      { id: 'canvas-check', title: 'App checker report', text: 'Every App checker issue of a canvas app in one tab – the formula with each problem underlined.', where: 'Power Apps Studio · a canvas app' },
+      { id: 'any-table', title: 'Open any table', text: 'Any table of the environment – also one the app leaves out – as a view or a new form, right in the app you are in.', where: 'Dynamics 365 · a model-driven app' },
+      { id: 'wiki-tree', title: 'Copy wiki tree', text: 'Every page of an Azure DevOps wiki, folded ones too, on the clipboard in one click – or saved as a Markdown text file, every page a link.', where: 'Azure DevOps · a wiki' },
+      { id: 'lower-schema', title: 'Lowercase schema names', text: 'A switch: the schema name of a new table, column or choice stays in lower case as you type – new_myfield, not new_MyField.', where: 'Power Apps · New table, column or choice' }
+    ],
+    // On the last step, a gold card: how many more the release has (its What's
+    // new entry, less the tour's tools and the tour itself), a few of them.
+    more: { n: 8, chips: ['My shortcuts · apps', 'Export run · loops', 'Edit flow · faster'], rest: '+ fixes' }
+  };
+  let tourDue = null; // the version updated to, while its tour waits
+  let tourNew = new Set(); // tiles wearing NEW
+  let tour = null; // { at, tip } while shown
+
+  const tourSteps = () => TOUR.steps.filter((st) => features.some((f) => f.id === st.id));
+  const tourStepId = () => {
+    const steps = tourSteps();
+    return tour && tour.at < steps.length ? steps[tour.at].id : null;
+  };
+
+  function maybeTour() {
+    if (!tourDue || tour || inFrame || arranging || !refs || !root || !root.classList.contains('db-open')) return;
+    const steps = tourSteps();
+    if (!steps.length) return endTour();
+    tour = { at: 0, tip: null };
+    // NEW on the tour's tiles, for this version, until each is used.
+    if (!tourNew.size) {
+      tourNew = new Set(steps.map((st) => st.id));
+      store({ [TOUR_NEW_KEY]: { v: TOUR.v, ids: Array.from(tourNew) } });
+    }
+    refs.mid.addEventListener('scroll', placeTip, { passive: true });
+    window.addEventListener('resize', placeTip);
+    showStep(0);
+  }
+
+  function showStep(at) {
+    if (!tour) return;
+    tour.at = at;
+    // The tiles of other pages are listed for the tour, the step's section open.
+    render();
+    const steps = tourSteps();
+    const last = at === steps.length - 1;
+    refs.panel.classList.add('db-touring');
+    refs.body.querySelectorAll('.db-tour-spot').forEach((t) => t.classList.remove('db-tour-spot', 'db-tour-off'));
+    let dim = refs.panel.querySelector('.db-tour-dim');
+    if (!dim) refs.panel.appendChild((dim = el('div', 'db-tour-dim')));
+    if (tour.tip) tour.tip.remove();
+    const tip = (tour.tip = el('div', 'db-tour-tip'));
+    tip.setAttribute('role', 'dialog');
+    const dots = '<span class="db-tour-dots">' + steps.map((x, i) => '<i' + (i <= at ? ' class="on"' : '') + '></i>').join('') + '</span>';
+    const kick = '<div class="db-tour-k">New in ' + TOUR.v + ' · ' + (at + 1) + ' of ' + steps.length + '</div>';
+    const st = steps[at];
+    const here = usable(features.find((x) => x.id === st.id));
+    const tile = refs.body.querySelector('.db-tile[data-db-id="' + st.id + '"]');
+    if (tile) {
+      tile.classList.add('db-tour-spot');
+      if (!here) tile.classList.add('db-tour-off');
+      tile.scrollIntoView({ block: 'center' });
+    }
+    tip.innerHTML =
+      // The last one has an × in its head's row, with the same room around it as the text.
+      (last
+        ? '<div class="db-tour-head">' + kick +
+          '<button type="button" class="db-tour-x" data-tour="close" title="Close" aria-label="Close">' +
+          '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>'
+        : kick) +
+      '<b class="db-tour-t"></b><p class="db-tour-p"></p>' +
+      (here ? '' : '<div class="db-tour-where"><i>Not on this page</i><span></span></div>') +
+      // ...and says there is more, with the way to it.
+      (last ? '<button type="button" class="db-tour-more" data-tour="news" title="See what’s new"><span class="db-tour-more-h"><i>\u2726</i></span><span class="db-tour-more-c"></span></button>' : '') +
+      '<div class="db-tour-row">' + dots + (at ? '<button type="button" data-tour="back">Back</button>' : '<button type="button" data-tour="skip">Skip</button>') +
+      (last
+        ? '<button type="button" class="db-tour-go" data-tour="news">See what’s new →</button>'
+        : '<button type="button" class="db-tour-go" data-tour="next">Next</button>') +
+      '</div>';
+    tip.querySelector('.db-tour-t').textContent = st.title;
+    tip.querySelector('.db-tour-p').textContent = st.text;
+    if (!here) tip.querySelector('.db-tour-where span').textContent = st.where;
+    if (last) {
+      const more = tip.querySelector('.db-tour-more');
+      more.querySelector('.db-tour-more-h').append('And ' + TOUR.more.n + ' more in this release');
+      const chips = more.querySelector('.db-tour-more-c');
+      for (const c of TOUR.more.chips) chips.appendChild(el('span', '', c));
+      if (TOUR.more.rest) chips.appendChild(el('span', 'db-tour-more-rest', TOUR.more.rest));
+    }
+    tour.tile = tile;
+    tip.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-tour]');
+      if (!b) return;
+      const what = b.getAttribute('data-tour');
+      if (what === 'next') showStep(tour.at + 1);
+      else if (what === 'back') showStep(Math.max(0, tour.at - 1));
+      else if (what === 'news') {
+        endTour();
+        openHelp(true);
+      } else endTour();
+    });
+    root.appendChild(tip);
+    placeTip();
+    const go = tip.querySelector('.db-tour-go');
+    if (go) go.focus({ preventScroll: true });
+  }
+
+  // Beside the tile, left of the panel, kept on the screen; its arrow at the tile.
+  function placeTip() {
+    if (!tour || !tour.tip) return;
+    const tip = tour.tip;
+    const panel = refs.panel.getBoundingClientRect();
+    const r = tour.tile ? tour.tile.getBoundingClientRect() : null;
+    const w = tip.offsetWidth;
+    const h = tip.offsetHeight;
+    tip.style.left = Math.max(8, (r ? r.left : panel.left) - w - 14) + 'px';
+    const want = r ? r.top + r.height / 2 - 40 : panel.top + 64;
+    const top = Math.max(8, Math.min(want, innerHeight - h - 8));
+    tip.style.top = top + 'px';
+    if (r) tip.style.setProperty('--db-tour-y', Math.max(12, Math.min(h - 26, r.top + r.height / 2 - top - 7)) + 'px');
+  }
+
+  function endTour() {
+    const was = tour;
+    tour = null;
+    tourDue = null;
+    store({ [TOUR_KEY]: null });
+    if (!was) return;
+    if (was.tip) was.tip.remove();
+    if (refs) {
+      refs.mid.removeEventListener('scroll', placeTip);
+      refs.panel.classList.remove('db-touring');
+      const dim = refs.panel.querySelector('.db-tour-dim');
+      if (dim) dim.remove();
+      render();
+    }
+    window.removeEventListener('resize', placeTip);
+  }
+
+  // A tile of the tour used: its NEW goes.
+  function usedNew(id) {
+    if (!tourNew.delete(id)) return;
+    store({ [TOUR_NEW_KEY]: { v: TOUR.v, ids: Array.from(tourNew) } });
   }
 
   function buildShell() {
@@ -1162,6 +1319,8 @@
       render();
       clearTimeout(savedTimer);
       savedTimer = setTimeout(() => showSaved(true), 260);
+      // After an update, its tour - once the tiles are drawn.
+      if (tourDue) setTimeout(maybeTour, 350);
       watchedHref = location.href;
       if (!watchTimer) {
         watchTimer = setInterval(() => {
@@ -1174,6 +1333,8 @@
         }, 700);
       }
     } else {
+      // Closing the panel ends the tour of what is new.
+      if (tour) endTour();
       dropResult();
       // Arranging ends with the panel; the next one opens as usual.
       if (drag) dragEnd(null, true);
@@ -1254,7 +1415,7 @@
     const byRank = (a, b) => rank.get(a.id) - rank.get(b.id);
     const here = features.filter(usable).sort(byRank);
     const elsewhere = features.filter((f) => !usable(f)).sort(byRank);
-    const listed = showAll ? here.concat(elsewhere) : here;
+    const listed = showAll || tour ? here.concat(elsewhere) : here;
 
     const groups = new Map();
     for (const f of listed) {
@@ -1277,16 +1438,20 @@
         refs.body.appendChild(el('div', 'db-away-head', 'On other pages'));
         awayHead = true;
       }
-      // A section: its name and its tiles, which move together.
-      const box = el('div', 'db-group');
+      // A section: its name and its tiles, which move together. Arranging
+      // opens every folded one, so its tiles can be moved.
+      const open = tour && g.items.some((f) => f.id === tourStepId());
+      const box = el('div', 'db-group' + (!arranging && !open && foldedGroups.has(g.name) ? ' db-group-folded' : ''));
       box.dataset.dbGroup = g.name;
       box.dataset.away = String(g.away);
       const head = el('div', 'db-group-name' + (g.away ? ' db-group-away' : ''));
       if (arranging) arrangeHead(head, box, g.name);
-      else head.textContent = g.name;
+      else foldHead(head, box, g);
       const grid = el('div', 'db-grid');
       for (const f of g.items) grid.appendChild(buildTile(f, g.name));
-      box.append(head, grid);
+      const fold = el('div', 'db-group-fold');
+      fold.appendChild(el('div', 'db-group-clip')).appendChild(grid);
+      box.append(head, fold);
       refs.body.appendChild(box);
     });
 
@@ -1306,6 +1471,41 @@
       : 'Show all (' + elsewhere.length + ')';
     refs.scope.style.display = elsewhere.length || showAll ? '' : 'none';
     equalTiles();
+  }
+
+  /* A section's name folds it, with the chevron of My shortcuts, and it
+   * stays folded - on every site, every page that shows it. Folded, it says
+   * how many tiles it holds and how many of its switches are on, so one
+   * left on is not forgotten. */
+  const CHEVRON_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m5 6 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  function foldHead(head, box, g) {
+    const on = g.items.filter((f) => f.type === 'toggle' && usable(f) && isOn(f.id)).length;
+    const btn = el('button', 'db-group-toggle');
+    btn.type = 'button';
+    btn.innerHTML = CHEVRON_SVG;
+    btn.append(el('span', 'db-group-text', g.name), el('span', 'db-sec-count db-group-badge', String(g.items.length)));
+    if (on) btn.appendChild(el('span', 'db-group-on db-group-badge', on + ' on'));
+    const mark = () => {
+      const shut = box.classList.contains('db-group-folded');
+      btn.setAttribute('aria-expanded', String(!shut));
+      btn.title = (shut ? 'Show ' : 'Hide ') + g.name;
+    };
+    mark();
+    btn.addEventListener('click', () => {
+      const shut = !box.classList.contains('db-group-folded');
+      if (shut) foldedGroups.add(g.name);
+      else foldedGroups.delete(g.name);
+      store({ [FOLDED_KEY]: Array.from(foldedGroups) });
+      // Clipped only while it folds or is shut, so an open one's focus
+      // ring and shadows show.
+      box.classList.add('db-group-moving');
+      box.classList.toggle('db-group-folded', shut);
+      clearTimeout(box.dbFoldTimer);
+      box.dbFoldTimer = setTimeout(() => box.classList.remove('db-group-moving'), 320);
+      mark();
+    });
+    head.appendChild(btn);
   }
 
   /* Every tile in the panel as tall as the tallest, never one row alone. A
@@ -1353,6 +1553,7 @@
     if (icon.firstElementChild) tile.appendChild(icon.firstElementChild);
 
     tile.appendChild(el('span', 'db-tile-name', feature.name));
+    if (tourNew.has(feature.id) && !arranging) tile.appendChild(el('span', 'db-tile-new', 'NEW'));
 
     if (feature.type === 'toggle') tile.setAttribute('aria-pressed', String(here && isOn(feature.id)));
     if (arranging) {
@@ -1368,9 +1569,15 @@
         nudge(tile, by);
       });
     } else if (feature.type === 'toggle') {
-      tile.addEventListener('click', () => toggle(feature.id));
+      tile.addEventListener('click', () => {
+        usedNew(feature.id);
+        toggle(feature.id);
+      });
     } else {
-      tile.addEventListener('click', () => run(feature));
+      tile.addEventListener('click', () => {
+        usedNew(feature.id);
+        run(feature);
+      });
     }
     return tile;
   }
@@ -1379,7 +1586,7 @@
 
   /* The pencil in the footer arranges the panel: tiles move within their
    * section, sections by their name - never a tile into another section.
-   * My solutions and the other sections a feature draws stay on top. A drag
+   * My shortcuts and the other sections a feature draws stay on top. A drag
    * moves what it holds over the others, a section with its tiles; the arrow
    * keys do it in steps.
    *
@@ -2042,6 +2249,19 @@
     }
   });
 
+  // An update; the tour ended in another tab; a NEW used there.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    if (changes[TOUR_KEY]) {
+      tourDue = changes[TOUR_KEY].newValue || null;
+      if (!tourDue && tour) endTour();
+    }
+    if (changes[TOUR_NEW_KEY]) {
+      tourNew = readTourNew(changes[TOUR_NEW_KEY].newValue);
+      if (refs && !tour) queueRender();
+    }
+  });
+
   // An update, or What's new opened from another tab.
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes[NEWS_KEY]) return;
@@ -2057,6 +2277,15 @@
     // This tab's own change is drawn already - and keeps its focus.
     if (JSON.stringify(next) === JSON.stringify(layout)) return;
     layout = next;
+    queueRender();
+  });
+
+  // A section folded in another tab.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes[FOLDED_KEY]) return;
+    const next = new Set(changes[FOLDED_KEY].newValue || []);
+    if (Array.from(next).sort().join('\n') === Array.from(foldedGroups).sort().join('\n')) return;
+    foldedGroups = next;
     queueRender();
   });
 
@@ -2079,7 +2308,12 @@
   const api = (window.DynaBoost = {
     register,
     addSection,
-    refresh: queueRender,
+    // Something a tile's when() depends on changed - in a frame, the page's
+    // panel hears of it too.
+    refresh: () => {
+      queueRender();
+      announce();
+    },
     isOn,
     toggle,
     openPanel: () => {
@@ -2141,12 +2375,18 @@
     timers.push(setInterval(noteApp, 2000));
   }
 
-  chrome.storage.local.get([STORAGE_KEY, SHOW_ALL_KEY, THEME_KEY, USE_KEY, SAVED_KEY, SAVED_SEEN_KEY, LAYOUT_KEY, NEWS_KEY], (data) => {
+  // The NEW of this version's tour only.
+  const readTourNew = (v) => new Set(v && v.v === TOUR.v && Array.isArray(v.ids) ? v.ids : []);
+
+  chrome.storage.local.get([STORAGE_KEY, SHOW_ALL_KEY, THEME_KEY, USE_KEY, SAVED_KEY, SAVED_SEEN_KEY, LAYOUT_KEY, NEWS_KEY, FOLDED_KEY, TOUR_KEY, TOUR_NEW_KEY], (data) => {
     Object.assign(state, (data && data[STORAGE_KEY]) || {});
+    tourDue = (data && data[TOUR_KEY]) || null;
+    tourNew = readTourNew(data && data[TOUR_NEW_KEY]);
     newsDue = (data && data[NEWS_KEY]) || null;
     markInfo();
     layouts = readLayouts(data && data[LAYOUT_KEY]);
     layout = layouts[site] || noLayout();
+    foldedGroups = new Set(Array.isArray(data && data[FOLDED_KEY]) ? data[FOLDED_KEY] : []);
     saved = (data && data[SAVED_KEY]) || null;
     savedSeen = data ? data[SAVED_SEEN_KEY] : null;
     use = (data && data[USE_KEY]) || null;

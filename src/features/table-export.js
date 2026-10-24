@@ -420,7 +420,7 @@
     hosts: ['make.powerapps.com'],
     // A list page of the maker portal (tables, columns, solutions...), not
     // the canvas Studio or a flow.
-    when: () => !/\/canvas\//i.test(location.pathname),
+    when: () => !/\/canvas(\/|$)/i.test(location.pathname),
     type: 'action',
     hint: 'Copy this list as Markdown or CSV, or download it as CSV',
     icon: ICON,

@@ -919,7 +919,7 @@
     return '<span class="lg-slot" data-label="' + esc(label || '') + '">' + DynaBoost.formLogic.markHtml(mk, field, label) + '</span>';
   }
 
-  function rowHtml(c, tag) {
+  function rowHtml(c, tag, off) {
     const mk = markOf(c);
     const search = [c.label, c.field, c.id, c.displayName, c.formatted, c.value, c.kind].filter((x) => x != null).join(' ').toLowerCase();
     const empty = c.kind === 'field' && (c.value === undefined || isEmpty(c.value)) && !c.lookup;
@@ -927,7 +927,7 @@
     return (
       '<div class="row' + (hidden ? ' hid' : '') + (mk ? ' lg-has' : '') + '"' +
       (c.field ? ' data-field="' + esc(c.field) + '" data-m="' + esc(DynaBoost.formLogic.markSearch(mk)) + '"' : '') +
-      ' data-s="' + esc(search) + '"' + (empty ? ' data-empty="1"' : '') + '>' +
+      ' data-s="' + esc(search) + '"' + (empty ? ' data-empty="1"' : '') + (off ? ' data-off="1"' : '') + '>' +
       '<div class="lbl">' + esc(c.label || c.displayName || c.id) + badges(c) + (tag || '') + (c.field ? markSlot(mk, c.field, c.label || c.displayName) : '') + '<div class="sub"><code>' + esc(c.field || c.id || '') + '</code></div></div>' +
       '<div class="typ">' + esc(typeText(c)) + '</div>' +
       '<div class="val">' + (c.kind === 'field' ? valueHtml(c) : otherHtml(c)) + '</div>' +
@@ -1104,6 +1104,14 @@
     if (dump.header.length) parts.push('<section class="tab" id="hdr"><h2>Header</h2>' + dump.header.map((s, j) => sectionHtml(s, 'hdrs' + j, dump)).join('') + '</section>');
     parts.push(dump.tabs.map((t, i) => tabHtml(t, i, dump)).join(''));
     if (dump.footer.length) parts.push('<section class="tab" id="ftr"><h2>Footer</h2>' + dump.footer.map((s, j) => sectionHtml(s, 'ftrs' + j, dump)).join('') + '</section>');
+    // The entity's other columns, behind the "whole entity" switch.
+    if (dump.columnsNotOnForm.length) {
+      parts.push(
+        '<section class="tab" id="off" data-off="1"><h2>Not on this form</h2><div class="sec" id="offs">' +
+          dump.columnsNotOnForm.map((c) => rowHtml(Object.assign({ kind: 'field' }, c), '', true)).join('') +
+          '</div></section>'
+      );
+    }
     return parts.join('');
   }
 
@@ -1119,6 +1127,7 @@
       });
     });
     if (dump.footer.length) items.push('<a href="#ftr">Footer</a>');
+    if (dump.columnsNotOnForm.length) items.push('<a href="#off" data-off="1">Not on this form<span class="n">' + dump.columnsNotOnForm.length + '</span></a>');
     return items.join('');
   }
 
@@ -1235,6 +1244,7 @@
     'body.view-form #v-form,body.view-fields #v-fields,body.view-choices #v-choices,body.view-json #v-json,' +
     'body.view-scripts #v-scripts,body.view-rules #v-rules,body.view-automations #v-automations,body.view-commands #v-commands{display:block}' +
     'body.view-scripts .bar>label,body.view-rules .bar>label,body.view-automations .bar>label,body.view-commands .bar>label,body.view-json .bar>label{opacity:.4;pointer-events:none}' +
+    '.bar>label:has(input:disabled){opacity:.4;cursor:default}' +
     'body:not(.view-form) nav{display:none}' +
     'body.hide-empty [data-empty="1"]{display:none}' +
     'body:not(.whole-entity) [data-off="1"]{display:none}' +
@@ -1473,6 +1483,11 @@
 
     get('hide-empty').addEventListener('change', (e) => doc.body.classList.toggle('hide-empty', e.target.checked));
     get('whole-entity').addEventListener('change', (e) => doc.body.classList.toggle('whole-entity', e.target.checked));
+    // Nothing more to show - a new form, no record read - and the switch says so.
+    if (!offForm && !Object.keys(dump.choices).some((f) => !dump.choices[f].onForm)) {
+      get('whole-entity').disabled = true;
+      get('whole-entity').parentNode.title = dump.record ? 'Every column of the entity is on this form' : 'No record - only the form\'s own columns are known';
+    }
 
     const picker = get('form-pick');
     if (picker) {

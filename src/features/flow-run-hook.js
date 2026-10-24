@@ -26,10 +26,16 @@
     }
   }
 
+  // The page's own request is started a moment later, from a native function
+  // rather than from here: one the page's CSP blocks is then not put on
+  // DynaBoost's list of errors - Chrome files an error under the extension
+  // whose code is on its stack. The answer is the same promise as before.
+  const unblamed = (fetch, args) => Promise.resolve().then(Function.prototype.apply.bind(fetch, window, Array.from(args)));
+
   const origFetch = window.fetch;
   if (typeof origFetch === 'function') {
     window.fetch = function (...args) {
-      const p = origFetch.apply(this, args);
+      const p = unblamed(origFetch, args);
       try {
         const req = args[0];
         const url = typeof req === 'string' ? req : req && req.url;

@@ -1,6 +1,6 @@
 # DynaBoost — Privacy Policy
 
-_Last updated: 4 October 2026_
+_Last updated: 16 October 2026_
 
 DynaBoost is a browser extension that adds productivity tools to Microsoft
 Power Apps, Power Automate, Dynamics 365 and Azure DevOps pages.
@@ -15,15 +15,17 @@ Power Apps, Power Automate, Dynamics 365 and Azure DevOps pages.
   analytics, no tracking and no advertising. It does not send your data to
   the developer or to any third party.
 - **Requests it makes go to the service you are already using.** Tools that
-  read Dataverse or Azure DevOps records call the same Microsoft API as the
-  page you have open, with your existing session. Some tools that you start
+  read Dataverse or Azure DevOps records (such as a work item, or the list of
+  a wiki's pages) call the same Microsoft API as the page you have open, with
+  your existing session. Some tools that you start
   yourself write back to it — for example saving a draft workflow or journey.
-- **Edit flow and your sign-in.** To read, check and save a Power Automate
-  flow, a small helper inside the Power Automate page asks the page's own
-  Microsoft APIs, with the sign-in the page already sends to them. The
-  sign-in header stays in that page's memory: DynaBoost does not read it
-  into the extension, store it or send it anywhere, and it is used only for
-  the flow you opened, when you click.
+- **Edit flow, Export run and your sign-in.** To read, check and save a
+  Power Automate flow - and, for Export run, to read the iterations of a
+  run's loops - a small helper inside the Power Automate page asks the
+  page's own Microsoft APIs, with the sign-in the page already sends to
+  them. The sign-in header stays in that page's memory: DynaBoost does not
+  read it into the extension, store it or send it anywhere, and it is used
+  only for the flow or run you opened, when you click.
   A solution flow's unpublished draft is kept in its environment's
   Dataverse: to see it and, when you agree, publish it before a save,
   DynaBoost asks that environment in a tab of it, with your own sign-in - a
@@ -37,7 +39,16 @@ Power Apps, Power Automate, Dynamics 365 and Azure DevOps pages.
   only to the environment itself. It ends when you stop it, close the tab
   or close the browser. The last five users you picked there and up to
   three you starred (name, email, business unit) are kept in your browser
-  for each environment, to pick them again.
+  for each environment, to pick them again. Open any table keeps, the same
+  way, the logical names of up to five tables you starred and the last five
+  you opened.
+- **My shortcuts.** Inside a solution in make.powerapps.com, a small
+  helper in the page looks at the portal's own answer listing what the
+  solution holds and keeps only its apps (their ids, names and kinds), to
+  offer them for pinning. For a pinned model-driven app, "Open in App
+  designer" reads which solutions hold the app in a tab of its environment,
+  with your own sign-in: a tab you have open, or one it opens in the
+  background for a moment and closes again.
 - **Compare.** To compare this environment with
   another, DynaBoost reads the other one in a tab of that environment, with
   your own sign-in: a tab you have open, or one it opens in the background
@@ -52,7 +63,9 @@ Power Apps, Power Automate, Dynamics 365 and Azure DevOps pages.
   anywhere.
 - **Local storage.** DynaBoost stores its own settings in your browser
   (which tools are on, the order you arranged the panel's sections and
-  tiles in for each site, the host names of environments you entered, the
+  tiles in for each site, which sections you folded, the host names of environments you entered, your
+  shortcuts to solutions and apps in My shortcuts (with their names and
+  addresses - kept by Chrome sync with your profile, like your bookmarks), the
   users you last picked or starred in Impersonate, backups of journey and flow
   definitions from before your saves - the five newest of each, removed after
   14 days, the names and addresses of your environments as make.powerapps.com

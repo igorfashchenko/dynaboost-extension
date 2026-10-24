@@ -57,8 +57,9 @@ jobs:
             gh release create "$TAG" "${{ steps.build.outputs.zip }}" --title "DynaBoost ${{ steps.build.outputs.version }}" --generate-notes
           fi
 
+      # Only the public repository publishes: its tree is the one made for people.
       - name: Publish to Chrome Web Store
-        if: env.CWS_REFRESH_TOKEN != ''
+        if: env.CWS_REFRESH_TOKEN != '' && github.repository == 'igorfashchenko/dynaboost-extension'
         run: |
           TOKEN=$(curl -sf https://oauth2.googleapis.com/token \
             -d client_id="$CWS_CLIENT_ID" -d client_secret="$CWS_CLIENT_SECRET" \

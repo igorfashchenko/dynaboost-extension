@@ -162,7 +162,9 @@
     const host = await hostOf(where.env);
     if (!host) return { error: 'no-host' };
     try {
-      const r = await chrome.runtime.sendMessage({ type: 'DB_DV_FLOW', host: host, op: op, id: where.flow, on: !!on, noOpen: !!noOpen });
+      // A look for a draft gives up after 25 s - the save goes on; publishing is waited for.
+      const ask = chrome.runtime.sendMessage({ type: 'DB_DV_FLOW', host: host, op: op, id: where.flow, on: !!on, noOpen: !!noOpen });
+      const r = op === 'draft' ? await Promise.race([ask, new Promise((res) => setTimeout(() => res({ error: 'unreachable' }), 25000))]) : await ask;
       if (!r) return { error: 'unreachable', host: host };
       return r.error ? { error: r.error, host: host } : { result: r, host: host };
     } catch (e) {
@@ -183,9 +185,10 @@
   /* A solution flow's draft: read by the Power Automate page when it can
    * (its designer was open there), else in a tab of the flow's environment.
    * null when neither could tell. */
-  async function findDraft(where, noOpen) {
+  async function findDraft(where, noOpen, onElsewhere) {
     const d = await ask('draft', where).catch(() => null);
     if (d && d.available) return Object.assign(d, { route: 'page' });
+    if (onElsewhere) onElsewhere(await hostOf(where.env));
     const v = await viaDynamics(where, 'draft', false, noOpen);
     if (v.result && v.result.available) return Object.assign(v.result, { route: 'dynamics', host: v.host });
     return null;
@@ -444,6 +447,8 @@
       '.ck .fix{margin-top:4px;color:var(--dbc-fg-56637f);font-size:12.5px;white-space:pre-wrap}' +
       '.ck-none{padding:10px 14px;color:var(--dbc-fg-1c6b32);font-size:13px}' +
       DynaBoost.code.css +
+      DynaBoost.status.css +
+      '.status.busy{display:inline-flex;align-items:center;gap:14px;color:var(--dbc-fg-10224e)}.status .st-time{color:var(--dbc-fg-56637f)}' +
       DynaBoost.tabCss +
       '</style>' +
       '<body>' +
@@ -877,12 +882,30 @@
     DynaBoost.code.attach(tab, ed, 'json');
     ed.value = original;
 
+    /* kind: 'bad', 'good', or 'busy' - a step still working: DynaBoost's
+     * squares, and from 3 s on how long it has taken, so a slow one is not
+     * taken for a stuck one. */
+    let ticking = null;
     function setStatus(text, kind) {
-      status.textContent = text;
+      clearInterval(ticking);
+      ticking = null;
       status.classList.toggle('bad', kind === 'bad');
       status.classList.toggle('good', kind === 'good');
+      status.classList.toggle('busy', kind === 'busy');
       status.classList.remove('copied');
       status.title = kind === 'bad' ? 'Click to copy' : '';
+      if (kind !== 'busy') {
+        status.textContent = text;
+        return;
+      }
+      status.innerHTML = DynaBoost.status.html('busy') + '<span class="st-text"></span><span class="st-time"></span>';
+      status.querySelector('.st-text').textContent = text;
+      const time = status.querySelector('.st-time');
+      const from = Date.now();
+      ticking = setInterval(() => {
+        const s = Math.round((Date.now() - from) / 1000);
+        if (s >= 3) time.textContent = s + ' s';
+      }, 1000);
     }
 
     function select(offset, length) {
@@ -953,7 +976,7 @@
         select(r.offset == null ? -1 : r.offset);
         return null;
       }
-      setStatus('Checking with Power Automate…', null);
+      setStatus('Checking with Power Automate…', 'busy');
       let result;
       try {
         result = await ask('check', where, { body: { definition: r.parsed.definition } });
@@ -1060,7 +1083,7 @@
 
     // While a Power Automate tab is being waited for, the status line says so.
     onWait = (text) => {
-      if (text) setStatus(text, null);
+      if (text) setStatus(text, 'busy');
     };
     // A finding: its action name jumps to the action; anywhere else on it -
     // or its copy button - copies it, unless you were selecting text.
@@ -1196,6 +1219,20 @@
       if (busy) return;
       busy = true;
       btn.disabled = true;
+      // A draft is looked for before the save only when one is known - the
+      // flow opened as one, or with one waiting; otherwise the save goes at
+      // once, and only a save Power Automate refuses for a draft looks for
+      // it (below). A look in a tab of the environment can take long - it is
+      // not made for a published flow on every save. Looked for while Power
+      // Automate checks the code; not for code that is not even JSON.
+      let draftNote = 'Checking for an unpublished draft\u2026';
+      let waitingForDraft = false;
+      const draftLook = flow.draft && localCheck(ed.value).ok
+        ? findDraft(where, false, (host) => {
+            if (host) draftNote = 'Checking for an unpublished draft in ' + host + '\u2026';
+            if (waitingForDraft) setStatus(draftNote, 'busy');
+          }).catch(() => null)
+        : null;
       try {
         const v = await validate();
         if (!v) return;
@@ -1210,10 +1247,15 @@
         // environment. Found: published first, as Publish in the designer
         // would - asked. Not to be found: saved as it is; if Power Automate
         // refuses it for a draft, one question - publish it in the designer.
-        setStatus('Checking for an unpublished draft\u2026', null);
         // Opened as the draft: there is no published flow to compare with.
         const asDraft = flow.draft === 'only';
-        const found = await findDraft(where, false);
+        let found = null;
+        if (flow.draft) {
+          setStatus(draftNote, 'busy');
+          waitingForDraft = true;
+          found = await (draftLook || findDraft(where, false));
+          waitingForDraft = false;
+        }
         if (found) markDraft(!found.published ? 'only' : found.hasDraft ? 'pending' : null);
         let published = false;
         if (flow.draft && found) {
@@ -1227,7 +1269,7 @@
             setStatus('Not saved.', null);
             return;
           }
-          setStatus('Publishing the draft\u2026', null);
+          setStatus('Publishing the draft\u2026', 'busy');
           try {
             await publishDraft(where, found);
           } catch (e) {
@@ -1235,9 +1277,9 @@
           }
           published = true;
           markDraft(null);
-          setStatus('Draft published. Saving your code\u2026', null);
+          setStatus('Draft published. Saving your code\u2026', 'busy');
         } else {
-          setStatus('Saving\u2026', null);
+          setStatus('Saving\u2026', 'busy');
         }
         const put = async () => {
           const now = describe(await ask('get', where));
@@ -1272,7 +1314,7 @@
             setStatus('Not saved. Publish the flow in its designer, then Save again.', null);
             return;
           }
-          setStatus('Publishing the draft\u2026', null);
+          setStatus('Publishing the draft\u2026', 'busy');
           try {
             await publishDraft(where, d);
           } catch (e) {
@@ -1280,7 +1322,7 @@
           }
           published = true;
           markDraft(null);
-          setStatus('Draft published. Saving your code\u2026', null);
+          setStatus('Draft published. Saving your code\u2026', 'busy');
           saved = await put();
         }
         flow = describe(saved);

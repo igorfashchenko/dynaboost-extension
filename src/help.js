@@ -42,6 +42,24 @@
    * A long entry is items: a list under its version. */
   const NEWS = [
     {
+      v: '2.41',
+      items: [
+        'New: <b>App checker report</b> (canvas apps) – every App checker issue of the whole app in one tab: where it is, what App checker says and, for a formula, the formula with each problem underlined as View Problem (Alt+F8) shows it. Copy, JSON or CSV.',
+        'New: <b>Open any table</b> (model-driven apps) – any table of the environment, also one the app leaves out, as a view or a new form in the app you are in; found by display, logical or schema name, with five favorites and the last five opened.',
+        'New: <b>Copy wiki tree</b> (Azure DevOps) – every page of the wiki, folded ones too, on the clipboard in one click; also the paths, a Markdown text file with every page a link, or the tree in a tab to search.',
+        'New: <b>Lowercase schema names</b> – a switch that keeps the schema name of a new table, column or choice in lower case as you type: new_myfield, not new_MyField.',
+        '<b>My shortcuts</b> (was My solutions): pin apps too – the app you have open, an app from a solution or a pasted link; six in all. A model-driven app opens in the <b>App designer</b>, in the solution you pick. <b>+ Add</b> shows everything at once when all is pinned; shortcuts are dragged like the panel’s tiles.',
+        '<b>Every section of the panel folds</b> by its name and stays folded – a folded one shows how many tiles it holds and how many of its switches are on.',
+        '<b>Export run</b>: every iteration of Apply to each and Do until – the failed ones first; Where it failed names the iteration; Copy iteration, Copy failed iterations.',
+        '<b>Edit flow</b>: a flow just made in the designer can be edited as soon as it is saved; Save shows that it is working and is done sooner.',
+        '<b>Edit form</b> and <b>Edit view</b> open the designer at once. <b>Form as JSON</b>: whole entity works in the Form view too.',
+        '<b>Edit screen code</b>: Apply to Studio works for a canvas app on a model-driven form, and after an update without reloading Studio; when Studio refuses the code, its own error is shown and the controls deleted for it come back.',
+        'Fixes: Expand all steps opens everything even while the mouse moves, and closes all it opened; the canvas tools work in Studio opened from a model-driven form; the portals’ own blocked requests no longer show up as DynaBoost’s errors.',
+        '<b>Edit flow</b>: Save of a published flow goes at once – an unpublished draft is looked for only when the flow has one or Power Automate asks for it.',
+        'After an update, a short tour in the panel shows the new tools – where each works – and leads to What’s new.'
+      ]
+    },
+    {
       v: '2.40',
       items: [
         'New: <b>Compare</b> – this form and its table, or this record, against another environment, or two records here. Fields, columns and logic – only what differs.',
@@ -96,12 +114,12 @@
 
   // The tiles' names, as the panel shows them.
   const NAMES = {
-    'table-export': 'Export table', 'open-all': 'Open on All', 'auto-advanced': 'Open advanced options', 'column-defaults': 'Column defaults', 'classic-open': 'Open in classic',
-    'canvas-code': 'Edit screen code', 'canvas-tree': 'Expand tree', 'flow-edit': 'Edit flow', 'flow-run-export': 'Export run',
+    'table-export': 'Export table', 'open-all': 'Open on All', 'auto-advanced': 'Open advanced options', 'column-defaults': 'Column defaults', 'lower-schema': 'Lowercase schema names', 'classic-open': 'Open in classic',
+    'canvas-code': 'Edit screen code', 'canvas-check': 'App checker report', 'canvas-tree': 'Expand tree', 'flow-edit': 'Edit flow', 'flow-run-export': 'Export run',
     'expand-all': 'Expand all steps', 'form-dump': 'Form as JSON', 'form-editor': 'Edit form', 'table-open': 'Open table', 'view-editor': 'Edit view', 'logical-names': 'Logical names',
-    'god-mode': 'God mode', 'copy-record': 'Copy record', impersonate: 'Impersonate', 'advanced-find': 'Advanced Find',
+    'god-mode': 'God mode', 'copy-record': 'Copy record', impersonate: 'Impersonate', 'advanced-find': 'Advanced Find', 'any-table': 'Open any table',
     'system-jobs': 'System jobs', workflow: 'Open workflow', journey: 'Edit journey', 'ado-workitem': 'Copy work item',
-    'ado-taskboard-expand': 'Expand items', 'wiki-expand': 'Expand wiki tree',
+    'ado-taskboard-expand': 'Expand items', 'wiki-expand': 'Expand wiki tree', 'wiki-tree': 'Copy wiki tree',
     'blur-data': 'Blur data', presenting: 'Presenting'
   };
 
@@ -122,7 +140,8 @@
       facts: [
         'The toolbar icon opens and closes the panel; <kbd>Esc</kbd> closes it too.',
         'Only the tiles for the current page are listed; <b>Show all</b> in the footer shows the rest.',
-        'The <b>✎</b> in the footer arranges the panel: drag tiles within their section, and sections by their name (or the arrow keys). My solutions stays on top. Each site – Dynamics 365, Power Apps, Power Automate, Azure DevOps – keeps its own order; moved to the top or the bottom, a section or tile stays there on every page of the site. <b>Reset order</b> puts the site back as it came.',
+        'A section’s name folds it, as the chevron of My shortcuts does, and it stays folded until you open it. Folded, it shows how many tiles it holds – and how many of its switches are on.',
+        'The <b>✎</b> in the footer arranges the panel: drag tiles within their section, and sections by their name (or the arrow keys). My shortcuts stays on top. Each site – Dynamics 365, Power Apps, Power Automate, Azure DevOps – keeps its own order; moved to the top or the bottom, a section or tile stays there on every page of the site. <b>Reset order</b> puts the site back as it came.',
         '<b>Action</b> tiles run once. <b>Switches</b> remember their state – except “this page only” and “this tab only”.',
         'The id under the header (record, table, flow, run, solution, work item…) copies on click.',
         'Light / dark follows the browser until you pick one; a later change in the browser wins. Tabs DynaBoost opens follow the panel.',
@@ -139,15 +158,18 @@
       tools: [
         {
           id: 'solution-pins',
-          name: 'My solutions',
+          name: 'My shortcuts',
           kind: 'panel',
           icon: PIN_ICON,
           where: 'the top of the panel, on every site',
-          what: 'One-click shortcuts to solutions, each in its own environment.',
+          what: 'One-click shortcuts to solutions and apps, each in its own environment – solutions marked gold, apps blue.',
           facts: [
-            '!Up to <b>6</b> shortcuts – 3, then 3 more.',
-            'In a solution <b>[+]</b> pins it; anywhere else [+] takes a pasted solution link.',
-            '!One shortcut per solution, matched by its address – a rename does not hide a duplicate.',
+            '!Up to <b>6</b> shortcuts in all – 3, then 3 more.',
+            'In a solution <b>[+]</b> pins it; when the solution holds apps, a small list offers what of it is not pinned yet – the solution and its apps; one left, or an app ticked in the solution’s list, is pinned at once.',
+            'In an open model-driven app <b>[+]</b> pins the app. Anywhere else [+] takes a pasted link – to a solution, a model-driven app or a canvas app.',
+            'An app opens to use it: a model-driven app in Dynamics 365, a canvas app in the player.',
+            'A model-driven app has a third tool beside ✎ and ✕: <b>Open in App designer</b> – it lists the solutions the app is in (yours first, then the Default Solution, then the managed ones) and opens the designer in the one you pick. It reads them in a tab of the app’s environment – yours, or one opened in the background for a moment.',
+            '!One shortcut per solution or app, matched by its address – a rename does not hide a duplicate.',
             '<kbd>Ctrl</kbd>+click or middle click: new tab. Drag to reorder; hover for ✎ and ✕. Renaming an environment renames all its shortcuts.',
             'From Azure DevOps a shortcut opens in a new tab.',
             'Synced with your Chrome profile.'
@@ -207,6 +229,17 @@
           facts: ['Never in Edit column - a saved column stays as it is.', 'A checkbox you click yourself stays as you set it.', '!The checkbox is found by its English label.']
         },
         {
+          id: 'lower-schema',
+          kind: 'switch',
+          where: 'the New table, New column and New choice panels',
+          what: 'While on, the <b>Schema name</b> (in New choice: <b>Name</b>) stays in lower case as you type the display name: <code>new_myfield</code>, not <code>new_MyField</code>.',
+          facts: [
+            'A schema name you type in yourself is lowered too.',
+            'Never on an existing table, column or choice – its name can no longer be changed.',
+            '!Off by default. UI languages: EN, PL, DE, FR, ES, IT, NL.'
+          ]
+        },
+        {
           id: 'classic-open',
           kind: 'action',
           where: 'inside a solution',
@@ -252,6 +285,18 @@
           ]
         },
         {
+          id: 'canvas-check',
+          kind: 'action',
+          where: 'Studio',
+          what: 'Every issue App checker finds in the whole app – whichever screen is open – in one tab: its rule, where it is and what App checker says.',
+          facts: [
+            'Formula issues also with the formula and each problem as <b>View Problem</b> (<kbd>Alt</kbd>+<kbd>F8</kbd>) shows it – Studio goes to each one on the way.',
+            '<b>Copy</b> as Markdown, <b>Download JSON</b> (all of it) or <b>CSV</b>; the categories to pick from.',
+            'Nothing in the app changes; App checker is left on its list.',
+            '!It reads App checker as you would, so a change in Studio’s pane can break it: then <b>Copy layout</b> (no names, no texts) and send it with Report a bug.'
+          ]
+        },
+        {
           id: 'canvas-tree',
           kind: 'switch',
           where: 'Studio, Tree view',
@@ -279,6 +324,7 @@
             '<b>Versions</b>: the original + the last 5 saves of this tab, a click loads one. Before each save a backup in the browser: this flow’s, from this environment, kept 14 days (5 newest of all flows).',
             '!Versions live in the editor tab; closing it with unsaved edits or more than 3 versions asks first.',
             'Keeps working when the Power Automate tab is reloaded or closed – any open Power Automate tab will do.',
+            'A flow you have just made – also in a solution in make.powerapps.com – can be edited once it is saved the first time.',
             '<kbd>Ctrl</kbd>+<kbd>S</kbd> saves.',
             'Calls go through the page’s own sign-in – Power Automate’s, or Dynamics 365’s for a draft; the token never reaches DynaBoost.'
           ]
@@ -287,13 +333,15 @@
           id: 'flow-run-export',
           kind: 'action',
           where: 'a flow run',
-          what: 'The whole run in one tab: trigger and every action, nested ones too, with status, timing, inputs, outputs, errors – copy or download.',
+          what: 'The whole run in one tab: trigger and every action, nested ones too, every iteration of a loop, with status, timing, inputs, outputs, errors – copy or download.',
           facts: [
             '<b>Records</b> beside the steps: every Dataverse row the run read, created, changed or pointed at – its table, its name, the steps that touched it – one click opens it in Dynamics 365, in the app you last worked in there.',
             'A failed run opens with <b>Where it failed</b>: the step the failure started in – not the scopes that failed because of it – with its code, its message and the service’s own words from the response, even when Power Automate keeps them behind a link; a click goes to the step.',
-            'No extra calls, except large inputs, outputs and response bodies, fetched from their own links.',
+            '<b>Apply to each / Do until</b>: a loop that ran more than once gets a strip of its iterations – the failed ones red and shown first (<b>Failed</b> / <b>All</b>) – and the one you pick under it; <kbd>←</kbd> <kbd>→</kbd> step through. <b>Copy iteration</b>, <b>Copy failed iterations</b>; Copy everything takes every iteration along. A loop that ran once just shows its actions.',
+            'Where it failed names the iterations a step failed in – a click opens one.',
+            'The iterations are read from Power Automate with the page’s own sign-in; large inputs, outputs and response bodies come from their own links.',
             '!Those links expire after a few hours – an older run may miss them.',
-            '!Apply to each / Do until: each action once, as the run reports it, with how many times it ran – not every iteration.'
+            '!A very large loop: the copies carry the inputs and outputs of the first few hundred, the failed ones first – any other iteration opens on its own. Of a loop of many thousands only the first part is read (100 pages of Power Automate’s answer per action) – the tab says how many of how many.'
           ]
         },
         {
@@ -350,11 +398,10 @@
           id: 'form-editor',
           kind: 'action',
           where: 'a record',
-          what: 'This form in the make.powerapps.com form designer, in your solution that holds it.',
+          what: 'This form in the make.powerapps.com form designer, at once.',
           facts: [
-            'Opens at once in your one unmanaged solution that holds the form – or, when several do, in the one pinned in My solutions.',
-            'Otherwise a list asks which: your solutions, then the Default Solution, then the managed ones folded away.',
-            '!Only solutions that list the form itself are offered.'
+            'Opened in a solution that holds the form: the one pinned in My shortcuts, else one of yours, else the Default Solution – no list to pick from.',
+            'A form is the same in every solution that holds it: a change made in the designer is the form’s.'
           ]
         },
         {
@@ -363,7 +410,7 @@
           where: 'a record or a list',
           what: 'This table in make.powerapps.com, in your solution that holds it.',
           facts: [
-            'As Edit form: your one unmanaged solution that holds the table – or the pinned one – opens at once; otherwise a list asks which.',
+            'Your one unmanaged solution that holds the table – or the one pinned in My shortcuts – opens at once; otherwise a list asks which: your solutions, then the Default Solution, then the managed ones folded away.',
             '!In the list the Default Solution is marked: a change made there is in none of your solutions, so it is not exported with them.'
           ]
         },
@@ -371,11 +418,10 @@
           id: 'view-editor',
           kind: 'action',
           where: 'a list',
-          what: 'This list’s view in the make.powerapps.com view designer, in your solution that holds it.',
+          what: 'This list’s view in the make.powerapps.com view designer, at once.',
           facts: [
             'The view in the address – a list opened from a subgrid, or a view you picked – else the table’s default public view.',
-            'As Edit form: your one unmanaged solution that holds the view – or the pinned one – opens at once; otherwise a list asks which.',
-            '!Only solutions that list the view itself are offered.',
+            'As Edit form: opened in a solution that holds the view, with no list to pick from.',
             '!A personal view is in no solution: it says so and opens nothing.'
           ]
         },
@@ -435,6 +481,18 @@
           facts: ['In the maker portal the org address comes from the portal, or is asked once.']
         },
         {
+          id: 'any-table',
+          kind: 'action',
+          where: 'model-driven apps',
+          what: 'Any table of the environment – also one the app’s navigation leaves out – opened in this app as a view or as a new record’s form, as you would by changing etn= in the address.',
+          facts: [
+            '<b>View</b> or <b>Form</b>: the kind of page you are on, unless you change it. A view opens at the table’s default view, a form is the default main form of a new record.',
+            'Found by display name, logical name and schema name at once.',
+            '★ keeps up to five favorites at the top; the last five opened come under them – for each environment.',
+            '<kbd>Enter</kbd> opens it here; <kbd>Ctrl</kbd>+<kbd>Enter</kbd> or <kbd>Ctrl</kbd>+click in a new tab.'
+          ]
+        },
+        {
           id: 'system-jobs',
           kind: 'action',
           where: 'model-driven apps, and make.powerapps.com inside an environment',
@@ -489,6 +547,18 @@
           where: 'a wiki',
           what: 'Opens every page in the wiki’s tree.',
           facts: ['!Paced – every level loads from the server, so a big wiki takes a while.', 'Off: closes only what it opened.']
+        },
+        {
+          id: 'wiki-tree',
+          kind: 'action',
+          where: 'a wiki',
+          what: 'The whole tree of the wiki – every page, the folded ones too – on the clipboard as a Markdown list of titles: context for work on the documentation.',
+          facts: [
+            'Read at once through the wiki’s API – no page is opened or expanded.',
+            '!Titles only – no page content.',
+            'The card in the panel: <b>Copy paths</b> (one page a line), <b>Download</b> (a Markdown text file – the tree as a list, every page a link; it opens in any text editor), <b>Open tab</b> – the tree to fold, open and search, the page you are on marked.',
+            'A code wiki shown at a branch is read at that branch.'
+          ]
         }
       ]
     },
@@ -531,7 +601,7 @@
         'No server, analytics or tracking; requests go only to the Microsoft service you have open, with your sign-in.',
         'Writes only on your click – a flow, a draft workflow or journey, code applied in Studio. Impersonate adds one header to one tab.',
         'Report a bug and Suggest an idea open a form on Tally (tally.so) – only on your click, and only what you write is sent, with the version, browser, panel section, tool and kind of page.',
-        'Stored in the browser: switch states, light / dark, the panel’s order, org addresses, My solutions (Chrome sync), flow and journey backups, Impersonate favorites and recent users, and a count of tools used - for the rating hint on the heart.',
+        'Stored in the browser: switch states, light / dark, the panel’s order, org addresses, My shortcuts (Chrome sync), flow and journey backups, Impersonate favorites and recent users, and a count of tools used - for the rating hint on the heart.',
         'The clipboard is read only by the screen code editor.',
         'Permissions: storage, scripting, clipboard, offscreen, declarativeNetRequestWithHostAccess (Impersonate).'
       ]
@@ -759,7 +829,7 @@
     const SEEN = 'dynaboost.savedSeen';
     const clock = ts.counter(document, true);
     spot.replaceWith(clock.el);
-    const name = (id) => NAMES[id] || (id === 'solution-pins' ? 'My solutions' : id);
+    const name = (id) => NAMES[id] || (id === 'solution-pins' ? 'My shortcuts' : id);
     let saved = null;
     const show = (animate) => {
       const total = (saved && saved.total) || 0;

@@ -182,7 +182,8 @@
 
   /* The open View code dialog, read by canvas-code-hook.js in the Studio
    * iframe. Resolves { text, title } or null when there is no dialog. */
-  const HOOK = 'dynaboost-canvas-code';
+  const HOOK = 'dynaboost-canvas-code-v';
+  const HOOK_VERSION = 3; // canvas-code-hook.js's VERSION
   const STUDIO_ORIGIN = /^https:\/\/[^/]+\.gateway\.prod\.island\.powerapps\.com$/;
 
   function studioFrames() {
@@ -195,7 +196,50 @@
     });
   }
 
-  function askStudio() {
+  /* The Studio frame keeps the helper it got when it loaded, also after
+   * DynaBoost was updated. Asked for its version, an old or missing one is
+   * replaced through background.js (the newest file, added to the frame). */
+  let helperFresh = false;
+
+  function hello() {
+    const frames = studioFrames();
+    if (!frames.length) return Promise.resolve(0);
+    return new Promise((resolve) => {
+      const nonce = Math.random().toString(36).slice(2);
+      let best = 0;
+      const onMsg = (e) => {
+        const d = e.data;
+        if (!d || d.source !== HOOK || d.nonce !== nonce || d.type !== 'hello' || !STUDIO_ORIGIN.test(e.origin)) return;
+        best = Math.max(best, d.version || 0);
+        if (best >= HOOK_VERSION) done();
+      };
+      const done = () => {
+        window.removeEventListener('message', onMsg);
+        clearTimeout(timer);
+        resolve(best);
+      };
+      const timer = setTimeout(done, 1000);
+      window.addEventListener('message', onMsg);
+      for (const f of frames) f.contentWindow.postMessage({ source: HOOK, type: 'hello', nonce: nonce }, new URL(f.src).origin);
+    });
+  }
+
+  async function freshHelper() {
+    if (helperFresh || !studioFrames().length) return;
+    if ((await hello()) >= HOOK_VERSION) {
+      helperFresh = true;
+      return;
+    }
+    try {
+      await chrome.runtime.sendMessage({ type: 'DB_STUDIO_HOOK', hook: 'code' });
+    } catch (e) {
+      /* the extension was updated meanwhile */
+    }
+    helperFresh = (await hello()) >= HOOK_VERSION;
+  }
+
+  async function askStudio() {
+    await freshHelper();
     const frames = studioFrames();
     if (!frames.length) return Promise.resolve(null);
     const nonce = Math.random().toString(36).slice(2);
@@ -277,7 +321,8 @@
     return { name: scr.name, yaml: kids ? kids + '\n' : '', names: topNames(kids), props: props.join('\n').trim() };
   }
 
-  function applyToStudio(payload) {
+  async function applyToStudio(payload) {
+    await freshHelper();
     const frames = studioFrames();
     if (!frames.length) return Promise.resolve({ error: 'no-frame' });
     const nonce = Math.random().toString(36).slice(2);
@@ -626,6 +671,7 @@
       'no-delete': 'Could not open the Delete menu for ',
       'delete-failed': 'Studio did not delete ',
       timeout: 'Studio did not answer. Reload the Studio tab (F5) and try again.',
+      'paste-refused': 'Studio refused the code: ',
       exception: 'Studio refused: '
     };
 
@@ -701,7 +747,12 @@
       } else {
         const msg = (APPLY_ERRORS[res.error] || 'Apply failed: ') + (res.name || res.message || (APPLY_ERRORS[res.error] ? '' : res.error));
         const partial = res.deleted && res.deleted.length ? ' Already deleted: ' + res.deleted.join(', ') + ' \u2014 Ctrl+Z in Studio brings them back.' : '';
-        setStatus(msg + partial, true);
+        const back = res.restored && res.restored.length ? ' What was deleted for it is back (Undo in Studio): ' + res.restored.join(', ') + '.' : '';
+        // A property this Studio does not know for the control (an older
+        // version of it): where it is in the code, when the code is as typed.
+        const at = res.error === 'paste-refused' && payload.mode === 'controls' && /PA2108|Unknown property/i.test(res.message || '') && String(res.message).match(/\((\d+),\s*\d+\)/);
+        const hint = at ? ' Remove that property (line ' + at[1] + ') and apply again \u2014 this app\u2019s version of the control does not have it.' : '';
+        setStatus(msg + hint + back + partial, true);
         flash(btn, 'Not applied', false);
       }
     });
@@ -749,9 +800,11 @@
     wire(tab);
   }
 
-  // The canvas Studio: /e/{env}/canvas/?action=edit|new-model-app-page...
+  // The canvas Studio: /e/{env}/canvas/?action=edit|new-model-app-page... - and
+  // without the slash, as a canvas app embedded in a model-driven form opens
+  // (/e/{env}/canvas?action=edit&source=ModelDrivenFormIntegration...).
   function onStudio() {
-    return /\/canvas\//i.test(location.pathname);
+    return /\/canvas(\/|$)/i.test(location.pathname);
   }
 
   // ---------- Expand tree (toggle) ----------
@@ -764,7 +817,8 @@
   let treeRun = 0;
   let treeOpened = false;
 
-  function askTree(op) {
+  async function askTree(op) {
+    await freshHelper();
     const frames = studioFrames();
     if (!frames.length) return Promise.resolve({ error: 'no-frame' });
     const nonce = Math.random().toString(36).slice(2);

@@ -17,10 +17,25 @@
 
   // .../environments/{env}/flows/{id}/details, .../solutions/{s}/flows/{id},
   // the designer, a run - the flow id comes after /flows/, perhaps after shared/.
+  // A flow made new in the designer: .../flows/new/... even after its first
+  // save - the id comes from the save (flow-edit-hook.js), for this address.
+  let savedNew = null; // { path, flow }
+
   function flowFromUrl() {
     const m = location.pathname.match(/\/environments\/([^/?#]+)\/(?:.*\/)?flows\/(?:shared\/)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-    return m ? { env: decodeURIComponent(m[1]), flow: m[2].toLowerCase() } : null;
+    if (m) return { env: decodeURIComponent(m[1]), flow: m[2].toLowerCase() };
+    const n = location.pathname.match(/\/environments\/([^/?#]+)\/(?:.*\/)?flows\/new(?:\/|$)/i);
+    return n && savedNew && savedNew.path === location.pathname ? { env: decodeURIComponent(n[1]), flow: savedNew.flow } : null;
   }
+
+  window.addEventListener('message', (e) => {
+    if (e.source !== window) return;
+    const d = e.data;
+    if (!d || d.source !== 'dynaboost-flow-saved' || !/\/flows\/new(?:\/|$)/i.test(location.pathname)) return;
+    savedNew = { path: location.pathname, flow: d.flow };
+    // The tile shows now - here, and in the panel of the page this is a frame of.
+    DynaBoost.refresh();
+  });
 
   // ---------- the page helper ----------
 
