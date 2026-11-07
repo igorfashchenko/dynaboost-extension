@@ -171,7 +171,7 @@
     name: 'Copy record',
     group: 'Records',
     hosts: ['dynamics.com'],
-    when: () => params().get('pagetype') === 'entityrecord' && !!params().get('id'),
+    when: () => DynaBoost.page().type === 'entityrecord' && !!DynaBoost.page().id,
     type: 'action',
     hint: 'An unsaved copy of this record in a new tab',
     icon: ICON,

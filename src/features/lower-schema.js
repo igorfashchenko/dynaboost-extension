@@ -161,7 +161,7 @@
   DynaBoost.register({
     id: 'lower-schema',
     name: 'Lowercase schema names',
-    group: 'Tables and columns',
+    group: 'Automatic',
     hosts: ['make.powerapps.com'],
     when: () => TABLE_PAGES.test(location.pathname),
     hint: 'Schema names of new tables and columns in lower case',

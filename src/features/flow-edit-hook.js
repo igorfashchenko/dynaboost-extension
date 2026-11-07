@@ -392,13 +392,20 @@
     if (e.source !== window) return;
     const d = e.data;
     if (!d || d.source !== 'dynaboost-flow-edit' || !d.id) return;
-    handle(d).then(
-      (data) => window.postMessage({ source: 'dynaboost-flow-edit-reply', id: d.id, ok: true, data: data }, location.origin),
-      (err) =>
-        window.postMessage(
-          { source: 'dynaboost-flow-edit-reply', id: d.id, ok: false, error: String((err && err.message) || err), code: err && err.code, status: err && err.status },
-          location.origin
-        )
-    );
+    // Still at it: said at once and every 10 s, so a save that takes Power
+    // Automate minutes is waited for - only silence is a failure (flow-edit.js).
+    const alive = () => window.postMessage({ source: 'dynaboost-flow-edit-alive', id: d.id }, location.origin);
+    alive();
+    const beat = setInterval(alive, 10000);
+    handle(d)
+      .then(
+        (data) => window.postMessage({ source: 'dynaboost-flow-edit-reply', id: d.id, ok: true, data: data }, location.origin),
+        (err) =>
+          window.postMessage(
+            { source: 'dynaboost-flow-edit-reply', id: d.id, ok: false, error: String((err && err.message) || err), code: err && err.code, status: err && err.status },
+            location.origin
+          )
+      )
+      .finally(() => clearInterval(beat));
   });
 })();

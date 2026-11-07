@@ -1,6 +1,6 @@
-/* Features: Edit form, Open table and Edit view. Edit form opens the open form in the
+/* Features: Edit form, Edit table and Edit view. Edit form opens the open form in the
  * maker's form designer, /e/{environment}/s/{solution}/entity/{table}/form/edit/{form};
- * Open table opens the record's table, /environments/{environment}/solutions/{solution}/entities/{table's MetadataId}.
+ * Edit table opens the record's table, /environments/{environment}/solutions/{solution}/entities/{table's MetadataId}.
  * Edit view opens the list's view in the view designer,
  * /e/{environment}/s/{solution}/entity/{table}/view/{view}.
  * Edit form and Edit view open at once, with no list: in the first of the
@@ -9,7 +9,7 @@
  * the click and sent on when the address is known, so it is never a blocked
  * pop-up.
  *
- * Open table: in a solution that holds the table - the one unmanaged
+ * Edit table: in a solution that holds the table - the one unmanaged
  * solution of yours (or the one pinned in My shortcuts) opens at once;
  * otherwise a list of the solutions it is in - yours first, pinned on top,
  * then the Default Solution, then the managed ones - and you pick. The list
@@ -238,35 +238,205 @@
     );
   }
 
-  // ---------- Open table ----------
+  // ---------- Edit table ----------
 
   // The table of the record or the list on the page.
   function tableHere() {
-    const p = new URLSearchParams(location.search);
-    return p.get('etn') || null;
+    return DynaBoost.page().etn || null;
   }
 
   async function runTable() {
-    const d = dialog('Open table');
+    const d = dialog('Edit table');
     d.busy('Reading the table…');
     const ctx = DynaBoost.formContext ? await DynaBoost.formContext() : null;
     const table = (ctx && ctx.entity) || tableHere();
     const envId = clean((ctx && ctx.envId) || (await environmentId()));
     if (!table || !envId) return d.fail('Could not open the table. ' + (!table ? 'No record or list of a table on this page.' : 'The environment id could not be read.'));
     // The maker opens a table by its MetadataId, not its name.
-    let metaId = null;
+    let meta = null;
     openIn(
       d,
       'table',
       async () => {
-        const meta = await getJson("EntityDefinitions(LogicalName='" + encodeURIComponent(table) + "')?$select=MetadataId");
-        metaId = clean(meta.MetadataId);
-        return solutionsOf(metaId, ENTITY, envId);
+        meta = await getJson("EntityDefinitions(LogicalName='" + encodeURIComponent(table) + "')?$select=MetadataId,DisplayName,DisplayCollectionName");
+        meta.MetadataId = clean(meta.MetadataId);
+        return solutionsOf(meta.MetadataId, ENTITY, envId);
       },
-      (sol) => MAKER + '/environments/' + envId + '/solutions/' + sol + '/entities/' + metaId,
+      (sol) => {
+        // The tab unfolds its Objects tree down to the table (below).
+        const label = (l) => (l && l.UserLocalizedLabel && l.UserLocalizedLabel.Label) || '';
+        chrome.storage.local.set({
+          [REVEAL_KEY]: { env: envId, table: meta.MetadataId, names: [label(meta.DisplayName), label(meta.DisplayCollectionName), table].filter(Boolean), at: Date.now() }
+        });
+        return MAKER + '/environments/' + envId + '/solutions/' + sol + '/entities/' + meta.MetadataId;
+      },
       'table-open'
     );
   }
+
+  // ---------- in the maker portal: the table in the Objects tree ----------
+
+  /* Edit table leaves a note; in the tab it opened, the solution's Objects
+   * tree is unfolded down to the table - Tables opened, the table scrolled
+   * into view and focused, as if you had walked there. The portal draws the
+   * tree late and loads the tables only when Tables opens: waited for, up to
+   * a minute. Tables is found by its words (several UI languages), the table
+   * by a link to it or its name. A branch is opened the way the keyboard
+   * opens it (→ on it), else by its chevron - never by its name, which goes
+   * to the list of tables. Your own click or key first stops it. The note
+   * is dropped when read, and ignored after two minutes or for another
+   * table. Quiet: when the tree is not found it is left as it is. */
+  const REVEAL_KEY = 'dynaboost.tableReveal';
+  const TABLES = ['tables', 'tabele', 'tabellen', 'tablas', 'tabelle', 'tabelas', 'tabeller', 'taulukot', 'tabulky', 'táblák', 'tablolar'];
+  const CHEVRON = '[class*="expandIcon" i], [class*="chevron" i], [data-icon-name*="chevron" i], [class*="caret" i], [class*="expander" i], [class*="toggle" i]';
+
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  // An item's words alone: no icon glyph, no count - "Tables (59)" is "tables".
+  const words = (t) =>
+    String(t || '')
+      .replace(/\(\s*\d[\d\s.,]*\)/g, ' ')
+      .replace(/[^\p{L}\p{N}'’ ]+/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  const seen = (el) => !!el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden';
+
+  // The elements whose own text passes - text by text, cheap on a big page.
+  function textHits(test, within) {
+    const out = [];
+    const walk = document.createTreeWalker(within, NodeFilter.SHOW_TEXT);
+    for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+      if (!t.nodeValue || t.nodeValue.length > 120 || !test(words(t.nodeValue))) continue;
+      const el = t.parentElement;
+      if (el && !el.closest('#dynaboost-root, script, style') && seen(el) && !out.includes(el)) out.push(el);
+    }
+    return out;
+  }
+
+  /* Tables in the tree: its words on something that opens and closes - a
+   * tree item, or the toggle of its row - in a tree first. */
+  function tablesBranch() {
+    const found = [];
+    for (const el of textHits((w) => TABLES.includes(w), document.body)) {
+      let branch = null;
+      for (let n = el, up = 0; n && up < 6 && !branch; n = n.parentElement, up++) {
+        if (n.hasAttribute('aria-expanded') && n.tagName !== 'A') branch = n;
+        else if (n.matches('[role="treeitem"]')) break; // an item with nothing under it
+        else if (up && up < 4) branch = n.querySelector(':scope > button[aria-expanded], :scope > [role="button"][aria-expanded]');
+      }
+      if (branch) found.push(branch);
+    }
+    return found.find((b) => b.closest('[role="tree"]')) || found[0] || null;
+  }
+
+  // The branch's own chevron - not one of an item inside it.
+  const chevronOf = (branch) =>
+    Array.from(branch.querySelectorAll(CHEVRON)).find((c) => {
+      const group = c.closest('[role="group"]');
+      const item = c.closest('[role="treeitem"]');
+      return seen(c) && (!group || !branch.contains(group)) && (!item || item === branch || !branch.contains(item));
+    });
+
+  function press(el) {
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      const init = { bubbles: true, cancelable: true, view: window, button: 0 };
+      el.dispatchEvent(/^pointer/.test(type) && window.PointerEvent ? new PointerEvent(type, Object.assign({ pointerType: 'mouse', isPrimary: true }, init)) : new MouseEvent(type, init));
+    }
+  }
+
+  async function until(test, ms) {
+    for (const end = Date.now() + ms; Date.now() < end; await pause(200)) {
+      const v = test();
+      if (v) return v;
+    }
+    return test();
+  }
+
+  const isOpen = () => {
+    const b = tablesBranch();
+    return !!b && b.getAttribute('aria-expanded') === 'true';
+  };
+
+  async function unfold(branch) {
+    if (branch.getAttribute('aria-expanded') === 'true') return true;
+    if (branch.matches('[role="treeitem"]')) {
+      for (const type of ['keydown', 'keyup']) branch.dispatchEvent(new KeyboardEvent(type, { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39, which: 39, bubbles: true, cancelable: true }));
+      if (await until(isOpen, 1500)) return true;
+      branch = tablesBranch() || branch;
+    }
+    // A toggle of its own (a button that opens and closes), else its chevron.
+    const toggle = branch.matches('button, [role="button"]') && !branch.matches('a') ? branch : chevronOf(branch);
+    if (!toggle) return false;
+    press(toggle);
+    return until(isOpen, 1500);
+  }
+
+  // The table under Tables: a link to it, else its name - the first after Tables.
+  function tableItem(note) {
+    const branch = tablesBranch();
+    if (!branch) return null;
+    const scope = branch.closest('[role="tree"], [role="navigation"], nav, ul') || (branch.parentElement && branch.parentElement.parentElement) || document.body;
+    const after = (el) => el !== branch && !el.contains(branch) && (branch.compareDocumentPosition(el) & (Node.DOCUMENT_POSITION_FOLLOWING | Node.DOCUMENT_POSITION_CONTAINED_BY));
+    const item = (el) => el.closest('[role="treeitem"]') || el.closest('a, [role="link"], li') || el;
+    const link = Array.from(scope.querySelectorAll('a[href]')).find((a) => after(a) && seen(a) && a.getAttribute('href').toLowerCase().includes(note.table));
+    if (link) return item(link);
+    const names = note.names.map(words);
+    const hit = textHits((w) => names.includes(w), scope).find((el) => after(el) && item(el) !== branch.closest('[role="treeitem"]'));
+    return hit ? item(hit) : null;
+  }
+
+  // Into the middle of its list when out of view - only the list scrolls.
+  function bringIntoView(el) {
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      if (!/(auto|scroll)/.test(getComputedStyle(p).overflowY) || p.scrollHeight <= p.clientHeight + 2) continue;
+      const box = p.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      if (r.top < box.top || r.bottom > box.bottom) p.scrollTop += r.top - box.top - (box.height - r.height) / 2;
+      return;
+    }
+  }
+
+  async function reveal(note) {
+    let stopped = false;
+    const stop = (e) => {
+      if (e.isTrusted) stopped = true;
+    };
+    document.addEventListener('pointerdown', stop, true);
+    document.addEventListener('keydown', stop, true);
+    const away = () => stopped || !location.pathname.toLowerCase().includes(note.table);
+    try {
+      const branch = await until(() => away() || tablesBranch(), 60000);
+      if (!branch || away() || !(await unfold(branch)) || away()) return;
+      const item = await until(() => away() || tableItem(note), 20000);
+      if (!item || away()) return;
+      bringIntoView(item);
+      // Focused as the portal focuses an item - unless you are already somewhere else.
+      const tree = item.closest('[role="tree"]') || item.parentElement;
+      const now = document.activeElement;
+      if (!now || now === document.body || tree.contains(now)) {
+        const target = item.matches('[tabindex], a[href], button') ? item : item.querySelector('a[href], button, [tabindex]');
+        if (target) target.focus({ preventScroll: true });
+      }
+    } finally {
+      document.removeEventListener('pointerdown', stop, true);
+      document.removeEventListener('keydown', stop, true);
+    }
+  }
+
+  function makerSide() {
+    if (location.hostname !== 'make.powerapps.com' || !location.pathname.toLowerCase().includes('/environments/')) return;
+    chrome.storage.local.get(REVEAL_KEY, async (d) => {
+      const note = d && d[REVEAL_KEY];
+      if (!note || Date.now() - note.at > 120000) return;
+      const path = location.pathname.toLowerCase();
+      if (!path.includes('/environments/' + note.env + '/') || !path.includes(note.table)) return;
+      chrome.storage.local.remove(REVEAL_KEY);
+      while (!document.body) await pause(100);
+      reveal(note);
+    });
+  }
+
+  makerSide();
 
   // ---------- Edit view ----------
 
@@ -280,9 +450,9 @@
    * opened from a subgrid, or a view picked) - else the table's default
    * public view. A personal view (viewType 4230) is in no solution. */
   async function viewHere(table) {
-    const p = new URLSearchParams(location.search);
-    if (p.get('viewType') === '4230') throw new Error('This is a personal view - it is in no solution and opens in the view designer only as a system view. Pick a system view and try again.');
-    const id = clean(p.get('viewid'));
+    const p = DynaBoost.page();
+    if (p.viewType === '4230') throw new Error('This is a personal view - it is in no solution and opens in the view designer only as a system view. Pick a system view and try again.');
+    const id = clean(p.viewId);
     const path = id
       ? 'savedqueries(' + id + ')?$select=savedqueryid,name'
       : "savedqueries?$select=savedqueryid,name&$filter=returnedtypecode eq '" + encodeURIComponent(table) + "' and isdefault eq true and querytype eq 0";
@@ -312,7 +482,7 @@
     name: 'Edit form',
     group: 'Records',
     hosts: ['dynamics.com'],
-    when: () => new URLSearchParams(location.search).get('pagetype') === 'entityrecord',
+    when: () => DynaBoost.page().type === 'entityrecord',
     type: 'action',
     hint: 'Open this form in the form designer',
     icon: ICON,
@@ -321,12 +491,12 @@
 
   DynaBoost.register({
     id: 'table-open',
-    name: 'Open table',
+    name: 'Edit table',
     group: 'Records',
     hosts: ['dynamics.com'],
-    when: () => /^entity(record|list)$/.test(new URLSearchParams(location.search).get('pagetype') || '') && !!tableHere(),
+    when: () => /^entity(record|list)$/.test(DynaBoost.page().type) && !!tableHere(),
     type: 'action',
-    hint: 'Open this table in the maker portal, in its solution',
+    hint: 'Edit this table in the maker portal, in its solution',
     icon: TABLE_ICON,
     onRun: runTable
   });
@@ -336,7 +506,7 @@
     name: 'Edit view',
     group: 'Records',
     hosts: ['dynamics.com'],
-    when: () => new URLSearchParams(location.search).get('pagetype') === 'entitylist' && !!tableHere(),
+    when: () => DynaBoost.page().type === 'entitylist' && !!tableHere(),
     type: 'action',
     hint: 'Open this view in the view designer',
     icon: VIEW_ICON,

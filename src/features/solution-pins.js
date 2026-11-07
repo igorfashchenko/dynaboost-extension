@@ -878,12 +878,10 @@
 
   // ---------- boot ----------
 
-  chrome.storage.sync.get(STORE_KEY, (data) => {
+  Promise.all([chrome.storage.sync.get(STORE_KEY), chrome.storage.local.get(FOLD_KEY)]).then(([data, d]) => {
     pins = normalise(data && data[STORE_KEY]);
-    chrome.storage.local.get(FOLD_KEY, (d) => {
-      folded = !!(d && d[FOLD_KEY]);
-      DynaBoost.addSection({ id: 'solution-pins', draw: draw });
-    });
+    folded = !!(d && d[FOLD_KEY]);
+    DynaBoost.addSection({ id: 'solution-pins', draw: draw });
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {

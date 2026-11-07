@@ -31,3 +31,5 @@ Nothing ships light-only.
 - No remote code. A new permission or site needs its reason in
   `store/LISTING.md`, and `store/PRIVACY.md` has to stay true.
 - A new tool gets its entry in the in-app help (`src/help.js`).
+- A new tool uses `DynaBoost.copyText`, `DynaBoost.send` and
+  `DynaBoost.webApi` from `src/core.js` rather than a copy of its own.

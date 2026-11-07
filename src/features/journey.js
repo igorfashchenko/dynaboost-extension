@@ -51,9 +51,9 @@
   // ---------- where are we ----------
 
   function journeyIdFromUrl() {
-    const p = new URLSearchParams(location.search);
-    const etn = (p.get('etn') || '').toLowerCase();
-    const id = clean(p.get('id'));
+    const pg = DynaBoost.page();
+    const etn = pg.etn;
+    const id = clean(pg.id);
     if (etn === ENTITY && /^[0-9a-f-]{36}$/.test(id)) return id;
     return null;
   }

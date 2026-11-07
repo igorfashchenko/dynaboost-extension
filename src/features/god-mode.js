@@ -1,8 +1,11 @@
 /* Feature: God mode. On a record form: every hidden field, section and tab
  * shown, every locked field unlocked, every required column optional, kept so
- * while the form's scripts and rules run. Off: the form as it was. This page
- * only, nothing saved; a save still goes through the server's rules, and
- * field-level security stays. Done by form-tools-hook.js through Xrm.
+ * while the form's scripts and rules run. Off: the form as it was. A switch
+ * that is remembered: on, it stays on - a reload, another record, another tab
+ * - until it is switched off in the panel or with the \u00d7 on its frame.
+ * Nothing saved; a save still goes through the server's rules, and
+ * field-level security stays. Done by form-tools-hook.js through Xrm, in the
+ * page itself (not its frames).
  */
 (function () {
   if (DynaBoost.off) return;
@@ -89,29 +92,43 @@
   }
 
   let active = false;
-  let resetTile = null;
+  let keep = 0; // re-adds the listener while on
+  // Switched off with the × on the frame: says so, as a switch in the panel.
+  let byFrame = false;
+  const top = window.top === window;
 
-  // Another record ends it in the page; the tile goes off with it.
-  window.addEventListener('message', (e) => {
+  // A switch in the panel says what it did; one remembered - a reload, another
+  // tab - goes on quietly, the gold frame shows it.
+  const fromPanel = () => {
+    const root = document.getElementById('dynaboost-root');
+    return !!(root && root.classList.contains('db-open'));
+  };
+
+  // The × on the frame: the same as switching the tile off.
+  function onEvent(e) {
     if (e.source !== window || !e.data || e.data.source !== SRC + '-event') return;
-    if (!active) return;
-    // The × on the frame: the same as switching the tile off.
-    if (e.data.type === 'god-off-request') {
-      DynaBoost.toggle('god-mode');
-      return;
-    }
-    if (e.data.type !== 'god-off') return;
-    active = false;
-    if (resetTile) resetTile();
-  });
+    if (!active || e.data.type !== 'god-off-request') return;
+    byFrame = true;
+    DynaBoost.toggle('god-mode');
+  }
+  window.addEventListener('message', onEvent);
 
   async function enable() {
+    if (!top || active) return;
     active = true;
+    // Dynamics writes its page anew as it starts (document.open), which takes the listener off: put on again while on.
+    clearInterval(keep);
+    window.addEventListener('message', onEvent);
+    keep = setInterval(() => window.addEventListener('message', onEvent), 1500);
+    const loud = fromPanel();
     const r = (await ask('god', true)) || {};
+    if (!loud || !active) return;
     if (r.error) {
-      active = false;
-      if (resetTile) resetTile();
       toast('God mode', r.error, true);
+      return;
+    }
+    if (r.waiting) {
+      toast('God mode on', 'No record form here yet - the next one opens up as it comes.');
       return;
     }
     const parts = [];
@@ -121,14 +138,18 @@
     const note = await explain();
     // Switched off again meanwhile: its own message has been said.
     if (!active) return;
-    toast('God mode on', (parts.length ? parts.join(' · ') + ' - ' : '') + 'kept while you work; switch off to put the form back.' + (note ? ' ' + note : ''));
+    toast('God mode on', (parts.length ? parts.join(' · ') + ' - ' : '') + 'it stays on, also after a reload and on other records, until you switch it off.' + (note ? ' ' + note : ''));
   }
 
   async function disable() {
     if (!active) return;
     active = false;
+    clearInterval(keep);
+    keep = 0;
+    const loud = byFrame || fromPanel();
+    byFrame = false;
     await ask('god', false);
-    toast('God mode off', 'The form is as it was.');
+    if (loud) toast('God mode off', 'The form is as it was.');
   }
 
   DynaBoost.register({
@@ -136,16 +157,11 @@
     name: 'God mode',
     group: 'Records',
     hosts: ['dynamics.com'],
-    when: () => new URLSearchParams(location.search).get('pagetype') === 'entityrecord',
+    when: () => DynaBoost.page().type === 'entityrecord',
     type: 'toggle',
-    // For this page only: a reload or another record finds it off.
-    session: true,
-    hint: 'Shows hidden fields, unlocks locked ones (this page only)',
+    hint: 'Shows hidden fields, unlocks locked ones - stays on until switched off',
     icon: ICON,
     onEnable: enable,
-    onDisable: disable,
-    onReset: (off) => {
-      resetTile = off;
-    }
+    onDisable: disable
   });
 })();

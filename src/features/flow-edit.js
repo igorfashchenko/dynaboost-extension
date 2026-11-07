@@ -11,6 +11,8 @@
     '<path d="m9.5 12.5 2 2 3.5-4.5" stroke="#E3B04B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
     '</svg>';
 
+  // How long the page helper may stay silent. While it works it says so every
+  // 10 s, and a long save is waited for as long as it takes.
   const ASK_TIMEOUT = 60000;
 
   // ---------- where are we ----------
@@ -52,7 +54,9 @@
   window.addEventListener('message', (e) => {
     if (e.source !== window) return;
     const d = e.data;
-    if (!d || d.source !== 'dynaboost-flow-edit-reply' || !waiting.has(d.id)) return;
+    if (!d || !waiting.has(d.id)) return;
+    if (d.source === 'dynaboost-flow-edit-alive') return waiting.get(d.id).alive();
+    if (d.source !== 'dynaboost-flow-edit-reply') return;
     const w = waiting.get(d.id);
     waiting.delete(d.id);
     clearTimeout(w.timer);
@@ -63,11 +67,20 @@
   function ask(op, where, extra) {
     return new Promise((resolve, reject) => {
       const id = 'dbfe' + ++seq + '-' + Date.now();
-      const timer = setTimeout(() => {
-        waiting.delete(id);
-        reject(new Error('Power Automate did not answer within ' + ASK_TIMEOUT / 1000 + ' seconds.'));
-      }, ASK_TIMEOUT);
-      waiting.set(id, { resolve, reject, timer });
+      let heard = false;
+      const silent = () =>
+        setTimeout(() => {
+          waiting.delete(id);
+          reject(new Error(heard ? 'Power Automate stopped answering for ' + ASK_TIMEOUT / 1000 + ' seconds. Reload the flow\u2019s page and check whether the save went through before trying again.' : 'Power Automate did not answer within ' + ASK_TIMEOUT / 1000 + ' seconds.'));
+        }, ASK_TIMEOUT);
+      const w = { resolve, reject, timer: silent() };
+      // The helper is still working: the wait starts again.
+      w.alive = () => {
+        heard = true;
+        clearTimeout(w.timer);
+        w.timer = silent();
+      };
+      waiting.set(id, w);
       window.postMessage(Object.assign({ source: 'dynaboost-flow-edit', id: id, op: op, env: where.env, flow: where.flow }, extra || {}), location.origin);
     });
   }

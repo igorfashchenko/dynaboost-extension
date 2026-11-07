@@ -117,7 +117,7 @@
   DynaBoost.register({
     id: 'open-all',
     name: 'Open on All',
-    group: 'Lists and grids',
+    group: 'Automatic',
     hosts: ['make.powerapps.com'],
     when: () => !!page(),
     hint: 'Tables and Apps open on All',

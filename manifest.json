@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DynaBoost",
-  "version": "2.41",
+  "version": "2.42",
   "description": "Toolbelt for Dynamics 365, Power Apps, Power Automate and Azure DevOps. Toggle features on and off from a side panel.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -10,7 +10,8 @@
     "clipboardWrite",
     "clipboardRead",
     "offscreen",
-    "declarativeNetRequestWithHostAccess"
+    "declarativeNetRequestWithHostAccess",
+    "browsingData"
   ],
   "host_permissions": [
     "https://make.powerapps.com/*",
@@ -41,6 +42,7 @@
     {
       "resources": [
         "icons/*.png",
+        "src/page-hook.js",
         "src/features/flow-run-hook.js",
         "src/features/flow-edit-hook.js",
         "src/features/form-dump-hook.js",
@@ -81,13 +83,18 @@
         "src/code-view.js",
         "src/features/table-export.js",
         "src/features/open-all.js",
+        "src/features/open-objects.js",
         "src/features/auto-advanced.js",
         "src/features/column-defaults.js",
         "src/features/lower-schema.js",
+        "src/features/ctrl-save.js",
+        "src/features/panel-scroll.js",
+        "src/features/component-names.js",
         "src/features/classic-designer.js",
         "src/features/advanced-find.js",
         "src/features/any-table.js",
         "src/features/system-jobs.js",
+        "src/features/clear-cache.js",
         "src/features/solution-pins.js",
         "src/features/flow-run-export.js",
         "src/features/flow-edit.js",
@@ -99,10 +106,13 @@
         "src/features/ado-taskboard.js",
         "src/features/form-logic.js",
         "src/features/form-commands.js",
+        "src/features/form-bpf.js",
+        "src/features/form-field-edit.js",
         "src/features/form-dump.js",
         "src/features/env-compare.js",
         "src/features/form-editor.js",
         "src/features/logical-names.js",
+        "src/features/record-history.js",
         "src/features/god-mode.js",
         "src/features/copy-record.js",
         "src/features/impersonate.js",

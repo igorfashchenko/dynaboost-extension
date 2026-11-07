@@ -124,6 +124,14 @@
           out.process.stages.push(stage);
         })
       );
+      // The stages this record goes through as its values are now - the
+      // branches' choice; the others are on paths it does not take.
+      const path = safe(() => proc.getActivePath(), null);
+      if (path) {
+        const ids = [];
+        safe(() => path.forEach((st) => ids.push(clean(safe(() => st.getId(), '')))));
+        if (ids.length) out.process.activePath = ids.filter(Boolean);
+      }
     }
 
     safe(() =>

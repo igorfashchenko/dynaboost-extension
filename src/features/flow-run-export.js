@@ -1,7 +1,8 @@
 /* Feature: Export run. Opens the run you are looking at in a read-only tab:
  * the trigger and every action with inputs, outputs, status, timing and
  * errors - and beside them the Dataverse records the run touched, each with
- * its table and a link to open it in Dynamics 365.
+ * its table and a link to open it in Dynamics 365 - and the SharePoint
+ * files it created, changed or read, with links to each file and its folder.
  *
  * The data is the portal's own .../runs/{runName}?api-version=1 response,
  * passed on by flow-run-hook.js. Large payloads come as inputsLink /
@@ -113,7 +114,30 @@
     return ms < 1000 ? ms + ' ms' : (ms / 1000).toFixed(2) + ' s';
   }
 
+  // How long, as one says it: 250 ms, 3.4 s, 4 min 12 s, 1 h 5 min.
+  function took(ms) {
+    if (!(ms >= 0)) return '';
+    if (ms < 1000) return Math.round(ms) + ' ms';
+    if (ms < 60000) return (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + ' s';
+    const s = Math.round(ms / 1000);
+    if (s < 3600) return Math.floor(s / 60) + ' min' + (s % 60 ? ' ' + (s % 60) + ' s' : '');
+    return Math.floor(s / 3600) + ' h' + (Math.round((s % 3600) / 60) ? ' ' + Math.round((s % 3600) / 60) + ' min' : '');
+  }
+  const spanOf = (a) => Date.parse(a.endTime) - Date.parse(a.startTime);
+  // The connector a step uses, by the end of its apiId: '.../apis/office365'
+  // in a run, '.../apis/shared_office365' in a definition.
+  const connectorOf = (host) => {
+    const h = host && typeof host === 'object' ? host : {};
+    const c = h.connection;
+    const m = /\/apis\/([^/]+)/i.exec(String(h.apiId || (c && typeof c === 'object' ? c.name : c) || ''));
+    return String(m ? m[1] : h.connectionReferenceName || h.connectionName || '')
+      .toLowerCase()
+      .replace(/^shared_/, '')
+      .replace(/[-_]\d+$/, '');
+  };
+
   async function fetchLink(link) {
+    if (link && link.secureData && !link.uri) return '[hidden - secured in the flow]';
     if (!link || typeof link.uri !== 'string' || !/^https:\/\//i.test(link.uri)) return undefined;
     // Guard against pulling something enormous into a tab.
     if (link.contentSize && link.contentSize > 2 * 1024 * 1024) {
@@ -390,7 +414,7 @@
     const o = s.outputs;
     const body = o && typeof o === 'object' && !Array.isArray(o) ? (o.body !== undefined ? o.body : o) : o;
     walk(body, 0);
-    if (!out.length && typeof body === 'string' && body.trim() && !/^\[fetch failed|^\[not fetched/.test(body)) {
+    if (!out.length && typeof body === 'string' && body.trim() && !/^\[(fetch failed|not fetched|hidden)/.test(body)) {
       add(body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 800));
     }
     return out;
@@ -597,10 +621,416 @@
       if (set && GUID_RE.test(String(rid))) add({ entity: singular(set, known), id: String(rid) }, s.name, role);
       walk(s.outputs, s.name, role, 0, false);
       walk(inputs.parameters, s.name, role, 0, false);
+      // The columns a create or an update set: its item/... parameters.
+      const cols = Object.keys(par)
+        .filter((k) => /^item\//i.test(k))
+        .map((k) => k.slice(5).replace(/@odata\.bind$/i, ''));
+      if (cols.length && /^(Created|Updated)$/.test(role)) {
+        for (const rec of found.values()) for (const h of rec.how) if (h.step === s.name && h.how === role) h.cols = cols;
+      }
     }
     // An action's table and id came before the run showed its table name.
     for (const rec of found.values()) if (!rec.host) rec.host = host;
     return Array.from(found.values());
+  }
+
+  // ---------- the files a run touched ----------
+
+  /* Every file the run created, changed, copied, moved, read or listed in
+   * SharePoint - its name, its folder, the steps that touched it, a link to
+   * the file and one to its folder - and in OneDrive, without links (the run
+   * does not carry its address). A file in a Dynamics 365 document folder
+   * (library = table, folder = <name>_<id without dashes>) names the record
+   * it belongs to. */
+  const FILE_ROLE = {
+    CreateFile: 'Created',
+    UpdateFile: 'Updated',
+    DeleteFile: 'Deleted',
+    CopyFile: 'Copied',
+    CopyFileAsync: 'Copied',
+    CopyDriveFile: 'Copied',
+    MoveFile: 'Moved',
+    MoveFileAsync: 'Moved',
+    GetFileContent: 'Read',
+    GetFileContentByPath: 'Read',
+    GetFileMetadata: 'Read',
+    GetFileMetadataByPath: 'Read',
+    GetFileItem: 'Read',
+    GetFileItems: 'Listed',
+    ListFolder: 'Listed',
+    ListRootFolder: 'Listed'
+  };
+  const MAX_FILES = 100;
+  const OFFICE_EXT = /\.(docx?|docm|xlsx?|xlsm|xlsb|pptx?|pptm)$/i;
+  const SAFE_URL = /^https:\/\/[a-z0-9.-]+(\/[^\s"'<>]*)?$/i;
+  const encPath = (p) => p.split('/').map((x) => encodeURIComponent(x)).join('/');
+
+  // A file id the connector was given - "%252fShared%2bDocuments%252fa.docx" - as its path.
+  function idPath(id) {
+    let s = String(id || '');
+    for (let n = 0; n < 3 && /%[0-9a-f]{2}/i.test(s); n++) {
+      try {
+        s = decodeURIComponent(s.replace(/\+/g, ' '));
+      } catch (e) {
+        return '';
+      }
+    }
+    return s.charAt(0) === '/' && s.length > 1 ? s : '';
+  }
+
+  const sizeText = (n) => (n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB');
+
+  // The record whose document folder holds the file: the deepest
+  // <table>/<name>_<32 hex> on its path.
+  function docRecordOf(path) {
+    const seg = path.split('/');
+    let rec = null;
+    for (let i = 2; i < seg.length - 1; i++) {
+      const m = /^(.*)_([0-9a-f]{32})$/i.exec(seg[i]);
+      if (!m || !/^[a-z][a-z0-9_]*$/.test(seg[i - 1])) continue;
+      const h = m[2].toLowerCase();
+      rec = { entity: seg[i - 1], id: [h.slice(0, 8), h.slice(8, 12), h.slice(12, 16), h.slice(16, 20), h.slice(20)].join('-'), name: m[1] };
+    }
+    return rec;
+  }
+
+  function findFiles(steps) {
+    const found = new Map();
+
+    const add = (f, step, role) => {
+      const path = f.path ? '/' + f.path.replace(/^\/+/, '') : '';
+      const name = f.name || (path ? path.split('/').pop() : '');
+      if (!name || /_\.000$/.test(name)) return; // a list item, not a file
+      const key = (f.site || f.service).toLowerCase().replace(/\/+$/, '') + '|' + (path || name).toLowerCase();
+      let file = found.get(key);
+      if (!file) {
+        if (found.size >= MAX_FILES) return;
+        file = { service: f.service, site: '', path: '', name: name, size: 0, link: '', how: [] };
+        found.set(key, file);
+      }
+      if (!file.site && f.site && SAFE_URL.test(f.site)) file.site = f.site.replace(/\/+$/, '');
+      if (!file.path && path) file.path = path;
+      if (!file.size && f.size > 0) file.size = f.size;
+      if (!file.link && f.link && SAFE_URL.test(f.link)) file.link = f.link;
+      if (role === 'Deleted') file.deleted = true;
+      if (!file.how.some((h) => h.step === step && h.how === role)) file.how.push({ step: step, how: role });
+    };
+
+    // A file's metadata as the connectors give it - CreateFile, Get file
+    // metadata, List folder - and SharePoint's file properties ({Link}).
+    function walk(v, step, role, base, depth) {
+      if (!v || typeof v !== 'object' || depth > 6) return;
+      if (Array.isArray(v)) return v.slice(0, MAX_PER_LIST).forEach((x) => walk(x, step, role === 'Trigger' ? role : 'Listed', base, depth + 1));
+      if (typeof v['{Link}'] === 'string' && v['{IsFolder}'] !== true && (v['{FilenameWithExtension}'] || v['{FullPath}'])) {
+        add({ service: 'SharePoint', site: base.site, path: v['{FullPath}'] || '', name: v['{FilenameWithExtension}'] || '', link: v['{Link}'] }, step, role);
+      } else if (typeof v.Path === 'string' && v.Path.charAt(0) === '/' && typeof v.Name === 'string' && v.IsFolder !== true && ('ItemId' in v || 'Id' in v || 'MediaType' in v)) {
+        add({ service: base.service, site: base.site, path: v.Path, name: v.Name, size: Number(v.Size) || 0 }, step, role);
+      }
+      for (const k of Object.keys(v)) if (k !== '$content' && k !== 'headers') walk(v[k], step, role, base, depth + 1);
+    }
+
+    for (const s of steps) {
+      const inputs = s.inputs && typeof s.inputs === 'object' ? s.inputs : {};
+      const host = inputs.host || {};
+      const op = host.operationId || '';
+      const conn = connectorOf(host);
+      const service = conn === 'sharepointonline' ? 'SharePoint' : /^onedrive/.test(conn) ? 'OneDrive' : '';
+      const role = s.kind === 'Trigger' ? 'Trigger' : FILE_ROLE[op] || 'Seen';
+      const par = inputs.parameters && typeof inputs.parameters === 'object' ? inputs.parameters : {};
+      const out = s.outputs && typeof s.outputs === 'object' ? s.outputs : {};
+      const body = out.body;
+      // The file's content in the answer: its size, when nothing else says it.
+      const content = body && typeof body === 'object' && typeof body.$content === 'string' ? body.$content : typeof body === 'string' ? body : '';
+      const size = content ? (body && body.$content ? Math.floor((content.length * 3) / 4) : content.length) : 0;
+      if (service && FILE_ROLE[op]) {
+        const site = typeof par.dataset === 'string' ? par.dataset : '';
+        // What the action was given: a path, a folder and a name, an id.
+        const given = op === 'CreateFile' && par.name ? String(par.folderPath || '').replace(/\/+$/, '') + '/' + par.name : par.path || idPath(par.id) || idPath(par.sourceFileId) || idPath(par.file);
+        if (given && !/^(Copied|Moved|Listed)$/.test(role)) add({ service: service, site: site, path: String(given), size: role === 'Read' ? size : 0 }, s.name, role);
+        // Copy / move: where it went, in the answer, on the destination site.
+        walk(body, s.name, role, { service: service, site: typeof par.destinationDataset === 'string' ? par.destinationDataset : site }, 0);
+      } else {
+        walk(body, s.name, role, { service: service || 'SharePoint', site: typeof par.dataset === 'string' ? par.dataset : '' }, 0);
+      }
+    }
+
+    const files = Array.from(found.values());
+    for (const f of files) {
+      if (f.service === 'SharePoint' && f.site && f.path) {
+        if (!f.link && !f.deleted) f.link = f.site + encPath(f.path) + (OFFICE_EXT.test(f.name) ? '?web=1' : '');
+        const dir = f.path.slice(0, f.path.lastIndexOf('/'));
+        if (dir) f.folderLink = f.site + encPath(dir);
+      }
+      if (f.deleted) f.link = '';
+      f.record = f.path ? docRecordOf(f.path) : null;
+    }
+    return files;
+  }
+
+  // ---------- what else the run did ----------
+
+  /* The emails the run sent, the approvals it asked for, the child flows it
+   * ran, the HTTP calls it made and what its variables ended with - read
+   * from the steps' inputs and outputs, as the records are: a step's kind
+   * from the flow's definition when the run carries it, else by its shape. */
+  const MAX_SHOWN = 25;
+  const objOf = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  // A parameter by the last part of its name: emailMessage/To is To.
+  const param = (par, re) => {
+    for (const k of Object.keys(par)) if (re.test(k.split('/').pop())) return par[k];
+    return undefined;
+  };
+  // A header of the outputs, whatever its case.
+  const header = (out, name) => {
+    const h = objOf(out.headers);
+    for (const k of Object.keys(h)) if (k.toLowerCase() === name) return String(h[k]);
+    return '';
+  };
+  const people = (v) =>
+    (Array.isArray(v) ? v : String(v == null ? '' : v).split(/[;,]/))
+      .map((x) => (x && typeof x === 'object' ? x.emailAddress || x.address || x.Address || x.email || '' : x))
+      .map((x) => String(x && typeof x === 'object' ? x.address || '' : x).trim())
+      .filter(Boolean);
+  const b64Size = (t) => (typeof t === 'string' ? Math.floor((t.replace(/=+$/, '').length * 3) / 4) : 0);
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+  // Each step's type and kind in the definition, scopes and branches included.
+  function typesOf(run) {
+    const p = (run && run.properties) || {};
+    const def = p.flow && p.flow.properties && p.flow.properties.definition;
+    const types = new Map();
+    const walk = (acts, d) => {
+      if (!acts || typeof acts !== 'object' || d > 30) return;
+      for (const k of Object.keys(acts)) {
+        const a = objOf(acts[k]);
+        const v = /Variable$/.test(a.type || '') ? String(objOf(a.inputs).name || '').toLowerCase() : '';
+        if (a.type) types.set(k, { type: String(a.type), kind: String(a.kind || ''), variable: v });
+        walk(a.actions, d + 1);
+        walk(a.else && a.else.actions, d + 1);
+        walk(a.default && a.default.actions, d + 1);
+        for (const c of Object.values(objOf(a.cases))) walk(objOf(c).actions, d + 1);
+      }
+    };
+    if (def) {
+      walk(def.triggers, 0);
+      walk(def.actions, 0);
+    }
+    return types;
+  }
+
+  const MAIL_API = /^(office365|outlook|sendmail|smtp|gmail|sendgrid|acsemail|flowpush)$/;
+  // An email sent: Send, Reply, Forward, from a shared mailbox, a draft;
+  // of the notifications only the email.
+  const isMail = (conn, op) => MAIL_API.test(conn) && /^(send|reply|forward|sharedmailboxsend)/i.test(op) && !/http/i.test(op) && (conn !== 'flowpush' || /email/i.test(op));
+  // Where a connector's "Send an HTTP request" sends a relative address.
+  const GRAPH_API = /^(office365users|office365|office365groups|office365groupsmail|teams)$/;
+
+  function findDone(steps, types) {
+    const done = { emails: [], approvals: [], children: [], calls: [], variables: [] };
+    const vars = new Map(); // by the name in lower case - Power Automate's own way
+    const setVar = (name, value, type, s, how) => {
+      const key = name.toLowerCase();
+      const v = vars.get(key) || { name: name, type: '', value: undefined, changes: 0, loops: new Set() };
+      v.value = value;
+      if (type) v.type = type;
+      v.step = s.name;
+      v.at = s.at;
+      v.time = Date.parse(s.startTime) || 0;
+      v.how = how;
+      v.changes++;
+      if (s.at && s.at.li !== undefined) v.loops.add(s.at.li);
+      vars.set(key, v);
+    };
+    const ordered = steps.slice().sort((a, b) => (Date.parse(a.startTime) || 0) - (Date.parse(b.startTime) || 0));
+    for (const s of ordered) {
+      if (s.kind !== 'Action') continue;
+      const type = (types.get(s.key || s.name) || {}).type || '';
+      const inputs = objOf(s.inputs);
+      const outputs = objOf(s.outputs);
+      const host = objOf(inputs.host);
+      const op = String(host.operationId || '');
+      const conn = connectorOf(host);
+      const par = objOf(inputs.parameters);
+      const body = objOf(outputs.body);
+      const base = { step: s.name, at: s.at, status: s.status };
+
+      if (isMail(conn, op)) {
+        const att = param(par, /^attachments$/i);
+        const files = (Array.isArray(att) ? att : [])
+          .filter((a) => a && typeof a === 'object')
+          .map((a) => {
+            const c = a.ContentBytes || a.contentBytes || a.ContentData || a.content;
+            return { name: String(a.Name || a.name || a.FileName || 'attachment'), size: b64Size(c && typeof c === 'object' ? c.$content : c) };
+          });
+        // The Mail connector: one file, its name and its content apart.
+        const one = param(par, /^filenames$/i);
+        if (!files.length && typeof one === 'string' && one) files.push({ name: one, size: b64Size(param(par, /^files$/i)) });
+        done.emails.push(
+          Object.assign(base, {
+            kind: /^reply/i.test(op) ? 'reply' : /^forward/i.test(op) ? 'forward' : /draft/i.test(op) ? 'draft' : 'email',
+            subject: String(param(par, /^(subject|notificationsubject)$/i) || ''),
+            to: conn === 'flowpush' ? ['the flow’s owner'] : people(param(par, /^(to|torecipients)$/i)),
+            cc: people(param(par, /^cc$/i)),
+            bcc: people(param(par, /^bcc$/i)),
+            from: String(param(par, /^(from|mailboxaddress|sender)$/i) || ''),
+            attachments: files,
+            // Send email with options, Send approval email: the button pressed.
+            answer: String(body.SelectedOption || '')
+          })
+        );
+        continue;
+      }
+
+      // An approval: started, created, waited for - one approval, by its id.
+      if (conn === 'approvals') {
+        const id = String(body.name || param(par, /^approval(name|id)$/i) || '');
+        let a = id ? done.approvals.find((x) => x.id === id) : null;
+        if (!a) done.approvals.push((a = Object.assign(base, { id: id, title: '', assigned: [], outcome: '', responses: [] })));
+        a.title = a.title || String(body.title || param(par, /^title$/i) || '');
+        if (!a.assigned.length) a.assigned = people(param(par, /^assignedto$/i));
+        // Today's answer lists the responses; the old one had one responder.
+        const said = Array.isArray(body.responses) ? body.responses : body.responder ? [{ responder: body.responder, approverResponse: body.response, comments: body.comments, responseDate: body.responseDate }] : [];
+        if (said.length) {
+          a.responses = said.filter(Boolean).map((r) => {
+            const who = objOf(r.responder);
+            return { who: String(who.displayName || who.email || who.userPrincipalName || ''), said: String(r.approverResponse || r.response || ''), comments: String(r.comments || ''), when: r.responseDate || '' };
+          });
+        }
+        if (body.outcome || body.response) a.outcome = String(body.outcome || body.response);
+        if (a.outcome || s.status !== 'Succeeded') a.status = s.status;
+        continue;
+      }
+
+      // A child flow: its run is named in the headers of the answer.
+      if (type === 'Workflow' || (!type && !host.apiId && !host.operationId && !host.connection && (host.workflowReferenceName || host.workflow))) {
+        if (s.status !== 'Skipped') done.children.push(Object.assign(base, { flow: header(outputs, 'x-ms-workflow-name'), run: header(outputs, 'x-ms-workflow-run-id'), ms: spanOf(s) }));
+        continue;
+      }
+
+      // Compose gives back what it was given - not a call, not a variable.
+      if (type === 'Compose' || (!type && !inputs.host && s.outputs !== undefined && same(s.inputs, s.outputs))) continue;
+
+      // An HTTP call: the HTTP action, or a connector's "Send an HTTP request".
+      let method = '';
+      let uri = '';
+      if (type === 'Http' || (!type && typeof inputs.method === 'string' && typeof inputs.uri === 'string' && !inputs.host)) {
+        method = String(inputs.method || '');
+        uri = String(inputs.uri || '');
+      } else if (op && /http/i.test(op)) {
+        method = String(param(par, /^method$/i) || '');
+        uri = String(param(par, /^(uri|url)$/i) || '');
+        if (uri && !/^https?:/i.test(uri)) {
+          const site = typeof par.dataset === 'string' ? par.dataset.replace(/\/+$/, '') : '';
+          const from = site || (GRAPH_API.test(conn) ? 'https://graph.microsoft.com' : conn === 'visualstudioteamservices' && par.account ? 'https://dev.azure.com/' + encodeURIComponent(par.account) : '');
+          if (from) uri = from + '/' + uri.replace(/^\/+/, '');
+        }
+      }
+      if (method && uri) {
+        done.calls.push(Object.assign(base, { method: method.toUpperCase(), uri: uri, code: outputs.statusCode, ms: spanOf(s) }));
+        continue;
+      }
+
+      // A variable - only from a step that did its work.
+      if (inputs.host || s.status !== 'Succeeded') continue;
+      const keys = Object.keys(inputs);
+      if (type === 'InitializeVariable' || (!type && keys.length === 1 && Array.isArray(inputs.variables) && inputs.variables.length && inputs.variables.every((v) => v && typeof v.name === 'string' && typeof v.type === 'string'))) {
+        for (const v of inputs.variables || []) if (v && typeof v.name === 'string') setVar(v.name, v.value, String(v.type || ''), s, 'Initialized');
+        continue;
+      }
+      if (typeof inputs.name !== 'string' || !keys.every((k) => k === 'name' || k === 'value')) continue;
+      const known = vars.get(inputs.name.toLowerCase());
+      if ('value' in body && (!type || /^(Set|Increment|Decrement)Variable$/.test(type))) {
+        // Set, Increment, Decrement: the answer has the value after it.
+        const was = known && known.value;
+        const how = /^Increment/.test(type) ? 'Incremented' : /^Decrement/.test(type) ? 'Decremented' : type || same(body.value, inputs.value) || typeof was !== 'number' ? 'Set' : body.value > was ? 'Incremented' : 'Decremented';
+        setVar(inputs.name, body.value, '', s, how);
+      } else if (/^AppendTo/.test(type) || (!type && !s.outputsLink && s.outputs === undefined)) {
+        // Append: only the piece is in the step - added to what came before.
+        if (!known) continue;
+        const add = inputs.value;
+        const t = known.type.toLowerCase();
+        if (t === 'array' || Array.isArray(known.value)) setVar(inputs.name, (Array.isArray(known.value) ? known.value : []).concat([add]), '', s, 'Appended to');
+        else if (t === 'string' || typeof known.value === 'string')
+          setVar(inputs.name, (known.value || '') + (add == null ? '' : typeof add === 'object' ? JSON.stringify(add) : String(add)), '', s, 'Appended to');
+      }
+    }
+    done.variables = Array.from(vars.values());
+    return done;
+  }
+
+  /* Who or what started the run, from its trigger: a person (a button,
+   * Power Apps, a selected item), a parent flow, a schedule, a change to a
+   * row, an event in another service, an HTTP request - and whether it was
+   * a test from the designer or a resubmitted run. */
+  const CONNECTOR_NAMES = {
+    sharepointonline: 'SharePoint',
+    office365: 'Outlook',
+    outlook: 'Outlook.com',
+    onedriveforbusiness: 'OneDrive',
+    onedrive: 'OneDrive',
+    teams: 'Teams',
+    microsoftforms: 'Forms',
+    approvals: 'Approvals',
+    excelonlinebusiness: 'Excel',
+    planner: 'Planner',
+    visualstudioteamservices: 'Azure DevOps',
+    commondataserviceforapps: 'Dataverse'
+  };
+  function fromBase64(v) {
+    try {
+      return decodeURIComponent(escape(atob(String(v))));
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function startedOf(top, run) {
+    const t = top.find((s) => s.kind === 'Trigger');
+    if (!t) return null;
+    const p = (run && run.properties) || {};
+    const def = typesOf(run).get(t.name) || {};
+    const inputs = objOf(t.inputs);
+    const outputs = objOf(t.outputs);
+    const body = objOf(outputs.body);
+    const host = inputs.host ? objOf(inputs.host) : null;
+    const conn = host ? connectorOf(host) : '';
+    const hd = (n) => header(outputs, n);
+    // The encoded headers keep a name's accents.
+    const st = {
+      how: '',
+      who: fromBase64(hd('x-ms-user-name-encoded')) || hd('x-ms-user-name'),
+      mail: fromBase64(hd('x-ms-user-email-encoded')) || hd('x-ms-user-email')
+    };
+    const caller = hd('x-ms-workflow-name');
+    const name = CONNECTOR_NAMES[conn] || conn;
+    if (def.type === 'Recurrence' || /^recurrence$/i.test(t.name) || (p.trigger && p.trigger.scheduledTime && !host && t.inputs === undefined && !t.inputsLink)) st.how = 'on a schedule';
+    else if (caller && hd('x-ms-workflow-run-id')) {
+      // A flow names itself by its GUID - a Logic App by a name.
+      st.how = GUID_RE.test(caller) ? 'by a parent flow' : 'by a Logic App';
+      if (GUID_RE.test(caller)) st.parent = { flow: caller, run: hd('x-ms-workflow-run-id') };
+    } else if (/^PowerApp/i.test(def.kind) || /\/apps\//i.test(hd('x-ms-client-app-id')) || /^PowerApps\//i.test(hd('x-ms-user-agent'))) st.how = 'from Power Apps';
+    else if (/^(Skills|VirtualAgent)$/i.test(def.kind)) st.how = 'from Copilot Studio';
+    else if (/^commondataservice/.test(conn)) {
+      const msg = String(body.SdkMessage || '').toLowerCase();
+      const table = String(param(objOf(inputs.parameters), /^entityname$/i) || (/#Microsoft\.Dynamics\.CRM\.([a-z0-9_]+)/i.exec(String(body['@odata.type'] || '')) || [])[1] || '');
+      const row = table ? table + ' row' : 'row';
+      st.how = 'by ' + (msg === 'create' ? 'a new ' + row : msg === 'delete' ? 'a deleted ' + row : (msg === 'update' ? 'a change to ' : '') + (/^[aeiou]/i.test(row) ? 'an ' : 'a ') + row);
+      if (!st.who) st.who = String(body['_modifiedby_value@OData.Community.Display.V1.FormattedValue'] || '');
+    } else if (st.who || st.mail || def.kind === 'Button') st.how = 'manually' + (host && name ? ' from ' + name : ''); // a button, or a selected item
+    else if (host && name) {
+      st.how = 'from ' + name;
+      // Who made the change in SharePoint; who sent the email.
+      const ed = objOf(body.Editor || body.Author);
+      if (ed.DisplayName || ed.Email) Object.assign(st, { who: String(ed.DisplayName || ''), mail: String(ed.Email || '') });
+      else if (typeof body.from === 'string' && /^(office365|outlook)$/.test(conn)) Object.assign(st, { how: 'by an email', of: 'from', mail: body.from });
+    } else if (def.kind === 'Http' || hd('user-agent') || outputs.queries) st.how = 'by an HTTP request';
+    // A test from the designer; a run started again from an earlier one.
+    const words = [].concat((p.correlation && p.correlation.clientKeywords) || [], hd('x-ms-client-keywords')).join(',').split(',');
+    if (words.some((w) => w.trim() === 'testFlow')) st.test = true;
+    const from = p.trigger && p.trigger.sourceHistoryName;
+    const flow = (/\/flows\/([^/]+)\/runs\//i.exec(String((run && run.id) || '')) || [])[1];
+    if (from && from !== run.name && flow) st.again = { flow: flow, run: String(from) };
+    return st.how || st.who || st.test || st.again ? st : null;
   }
 
   // The environment's Dynamics 365 address, when the run's rows did not say.
@@ -638,11 +1068,29 @@
   // ---------- rendering ----------
 
   function esc(s) {
-    return String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+
+  /* A file's content - base64 in $content, or the bytes of a .docx or .pdf
+   * read as text - says nothing in the tab or a copy and can be megabytes:
+   * its type and size stand in its place. */
+  const BINARY = /[\u0000-\u0008\u000e-\u001f\ufffd]/g;
+  const isBinary = (t) => t.length > 1000 && (/^(PK\u0003\u0004|%PDF-)/.test(t) || (t.slice(0, 2000).match(BINARY) || []).length > 20);
+  function slim(v, depth) {
+    if (typeof v === 'string') return isBinary(v) ? '[file content left out - ' + sizeText(v.length) + ']' : v;
+    if (!v || typeof v !== 'object' || depth > 12) return v;
+    if (Array.isArray(v)) return v.map((x) => slim(x, depth + 1));
+    if (typeof v.$content === 'string' && v.$content.length > 1000) {
+      return Object.assign({}, v, { $content: '[file content left out - ' + sizeText(Math.floor((v.$content.length * 3) / 4)) + ']' });
+    }
+    const o = {};
+    for (const k of Object.keys(v)) o[k] = slim(v[k], depth + 1);
+    return o;
   }
 
   function fmt(v) {
     if (v === undefined) return '(none)';
+    v = slim(v, 0);
     if (typeof v === 'string') return v;
     try {
       return JSON.stringify(v, null, 2);
@@ -767,8 +1215,8 @@
       error: s.error,
       retries: Array.isArray(s.retries) && s.retries.length ? s.retries : undefined,
       loop: s.loop || undefined,
-      inputs: s.inputs,
-      outputs: s.outputs
+      inputs: slim(s.inputs, 0),
+      outputs: slim(s.outputs, 0)
     };
   }
 
@@ -782,39 +1230,213 @@
     };
   }
 
-  // Every row the run touched - its steps', and its iterations' as far as read.
-  function recordsOf(ctx) {
-    const list = ctx.top.slice();
-    for (const l of ctx.L) for (const it of l.iterations) for (const a of it.actions) if (a.loaded) list.push(Object.assign({}, a, { name: a.name + ' #' + it.label }));
+  // The steps, and the iterations' actions as far as read.
+  function stepsOf(ctx) {
+    const list = ctx.top.map((s, i) => Object.assign({}, s, { key: s.name, at: { i: i } }));
+    ctx.L.forEach((l, li) => {
+      for (const it of l.iterations) for (const a of it.actions) if (a.loaded) list.push(Object.assign({}, a, { key: a.name, name: a.name + ' #' + it.label, at: { li: li, it: it.key } }));
+    });
+    return list;
+  }
+
+  // A link to a step, or to the iteration it ran in.
+  const goTo = (at) =>
+    !at ? '' : at.li !== undefined ? 'href="#" data-li="' + at.li + '" data-it="' + esc(at.it) + '"' : 'href="#s-' + at.i + '" data-go="s-' + at.i + '"';
+
+  /* The steps the run spent its time on: the 5 longest, a loop as a whole.
+   * A scope, condition or switch is left out when a step inside it is
+   * there - it only adds up what is inside it. */
+  function slowestOf(top) {
+    const timed = top
+      .map((s, i) => ({ name: s.name, ms: spanOf(s), from: Date.parse(s.startTime), at: { i: i }, s: s }))
+      .filter((x) => x.s.kind === 'Action' && x.ms > 0);
+    const holder = (x) =>
+      !x.s.loop && x.s.outputs === undefined && !x.s.outputsLink && timed.some((y) => y !== x && y.from >= x.from && y.from + y.ms <= x.from + x.ms);
+    const list = timed.filter((x) => !holder(x)).sort((a, b) => b.ms - a.ms).slice(0, 5);
+    return list.length > 1 ? list : [];
+  }
+
+  // Every file the run touched, and every row: its steps', its iterations',
+  // and the records whose document folders hold the files.
+  function touchedOf(ctx) {
+    const list = stepsOf(ctx);
+    const files = findFiles(list);
     const records = findRecords(list);
+    for (const f of files) {
+      if (!f.record) continue;
+      const r = f.record;
+      let rec = records.find((x) => x.entity === r.entity && x.id === r.id);
+      if (!rec) records.push((rec = { entity: r.entity, id: r.id, name: r.name, host: '', how: [] }));
+      const how = 'Document folder · ' + f.name;
+      if (!rec.how.some((h) => h.how === how)) rec.how.push({ step: f.how[0].step, how: how });
+    }
     for (const r of records) {
       if (!r.host) r.host = ctx.host;
       if (r.host && ctx.apps[r.host]) r.app = ctx.apps[r.host];
     }
-    return records;
+    const types = typesOf(ctx.run);
+    const done = findDone(list, types);
+    /* A variable a loop not read to the end may have changed: its value so
+     * far - unless it changed again after the loop. Which loop changes which
+     * variable the definition says; without it, any such loop may. */
+    const outer = (l) => {
+      for (let i = 0; l && l.outer && i < 20; i++) l = ctx.L.find((x) => x.name === l.outer) || null;
+      return l;
+    };
+    const unread = ctx.L.map((l) => {
+      if (!l.partial && !l.iterations.some((it) => it.actions.some((a) => !a.loaded))) return null;
+      const top = ctx.top.find((s) => s.name === (outer(l) || l).name) || {};
+      const left = new Set();
+      for (const it of l.iterations) for (const a of it.actions) if (!a.loaded) left.add((types.get(a.name) || {}).variable);
+      return { end: Date.parse(top.endTime) || Infinity, changes: (name) => !types.size || l.partial || left.has(name) };
+    });
+    for (const v of done.variables) v.partial = unread.some((u, li) => u && !(v.time > u.end) && (v.loops.has(li) || u.changes(v.name.toLowerCase())));
+    return Object.assign({ records: records, files: files, slowest: slowestOf(ctx.top), env: envOf(ctx.run) }, done);
   }
 
-  function asideHtml(records) {
-    // The records the run touched, beside the steps: what each is, and a link.
-    const recs = records.length
-      ? records
-          .map((r) => {
-            const how = r.how.map((h) => esc(h.how) + ' <span class="step">' + nice(h.step) + '</span>').join('<br>');
-            const inner =
-              '<span class="ent">' + esc(r.entity) + '</span>' +
-              '<span class="nm">' + (r.name ? esc(r.name) : '<code>' + esc(r.id) + '</code>') + '</span>' +
-              '<span class="how">' + how + '</span>';
-            return r.host
-              ? '<a class="rec" href="' + esc(recordUrl(r)) + '" target="_blank" rel="noopener noreferrer" title="Open this ' + esc(r.entity) + ' in Dynamics 365">' + inner + '<span class="go">↗</span></a>'
-              : '<div class="rec" title="The environment’s address is not known - open make.powerautomate.com’s environment list once">' + inner + '</div>';
-          })
-          .join('')
-      : '<div class="none">No Dataverse records in this run.</div>';
+  // The environment a run is in, from its id - for a link to another run.
+  const envOf = (run) => {
+    const m = /\/environments\/([^/]+)\//i.exec(String((run && run.id) || '')) || /\/environments\/([^/]+)/i.exec(location.pathname);
+    return m ? decodeURIComponent(m[1]) : '';
+  };
+  const runUrl = (env, flow, run) =>
+    env && flow && run ? 'https://make.powerautomate.com/environments/' + encodeURIComponent(env) + '/flows/' + encodeURIComponent(flow) + '/runs/' + encodeURIComponent(run) : '';
+
+  // Where a file is: its site, then its folders.
+  function placeOf(f) {
+    const dir = f.path ? f.path.split('/').slice(1, -1) : [];
+    let site = f.service;
+    if (f.site) {
+      const m = /^https:\/\/([^/]+)(?:\/(?:sites|teams)\/([^/]+))?/i.exec(f.site);
+      if (m) site = m[2] ? decodeURIComponent(m[2]) : m[1];
+    }
+    return [site].concat(dir).join(' › ');
+  }
+
+  function fileHtml(f) {
+    const ext = /\.([a-z0-9]{1,5})$/i.exec(f.name);
+    const how = f.how.map((h) => esc(h.how) + ' <span class="step">' + nice(h.step) + '</span>').join('<br>');
+    const name = f.link
+      ? '<a class="fn" href="' + esc(f.link) + '" target="_blank" rel="noopener noreferrer" title="Open this file in ' + esc(f.service) + '">' + esc(f.name) + '<span class="fgo">↗</span></a>'
+      : '<span class="nm" title="' + (f.deleted ? 'The run deleted this file' : f.service === 'OneDrive' ? 'The run does not carry the OneDrive’s address' : 'The run does not carry the file’s site') + '">' + esc(f.name) + '</span>';
+    const place = esc(placeOf(f));
+    const fold = f.folderLink
+      ? '<a class="fold" href="' + esc(f.folderLink) + '" target="_blank" rel="noopener noreferrer" title="Open its folder in SharePoint">' + place + '</a>'
+      : '<span class="fold">' + place + '</span>';
     return (
-      '<aside><div class="rh"><b>Records</b><span class="cnt">' + records.length + '</span></div>' +
-      (records.length ? '<div class="rsub">Every row this run read, created, changed or pointed at – click to open it in Dynamics 365.</div>' : '') +
-      recs + '</aside>'
+      '<div class="rec file"><span class="ent">' + esc(ext ? ext[1].toUpperCase() : 'file') + '</span>' + name + fold +
+      '<span class="how">' + how + (f.size ? '<br>' + sizeText(f.size) : '') + '</span></div>'
     );
+  }
+
+  // One part of the column: its heading and count, then its items - the
+  // first MAX_SHOWN of them, the copies have the rest.
+  function part(title, list, item, sub) {
+    if (!list.length) return '';
+    return (
+      '<div class="rh"><b>' + title + '</b><span class="cnt">' + list.length + '</span></div>' +
+      (sub ? '<div class="rsub">' + sub + '</div>' : '') +
+      list.slice(0, MAX_SHOWN).map(item).join('') +
+      (list.length > MAX_SHOWN ? '<div class="none">and ' + (list.length - MAX_SHOWN) + ' more – in Copy everything</div>' : '')
+    );
+  }
+
+  const stepLink = (x) => (x.at ? '<a class="step" ' + goTo(x.at) + ' title="Go to this step">' + nice(x.step) + '</a>' : '<span class="step">' + nice(x.step) + '</span>');
+  // The badge says what it is - red, and why, when its step failed.
+  const badge = (x, kind) => (FAILED.test(x.status || '') ? '<span class="ent bad">' + esc(x.status) + '</span>' : '<span class="ent">' + kind + '</span>');
+  const line = (label, xs) => (xs.length ? '<span class="who"><b>' + label + '</b> ' + esc(xs.join(', ')) + '</span>' : '');
+  // A value as one short line: text as it is, the rest as JSON.
+  const short = (v) => {
+    const t = v === undefined ? '' : typeof v === 'string' ? v : JSON.stringify(v);
+    return t.length > 80 ? t.slice(0, 79) + '…' : t;
+  };
+
+  function recordHtml(r) {
+    const how = r.how
+      .map((h) => '<span class="hw">' + esc(h.how) + ' <span class="step">' + nice(h.step) + '</span>' + (h.cols ? '<span class="cols">' + esc(h.cols.slice(0, 8).join(', ')) + (h.cols.length > 8 ? ' +' + (h.cols.length - 8) : '') + '</span>' : '') + '</span>')
+      .join('');
+    const inner =
+      '<span class="ent">' + esc(r.entity) + '</span>' +
+      '<span class="nm">' + (r.name ? esc(r.name) : '<code>' + esc(r.id) + '</code>') + '</span>' +
+      '<span class="how">' + how + '</span>';
+    return r.host
+      ? '<a class="rec" href="' + esc(recordUrl(r)) + '" target="_blank" rel="noopener noreferrer" title="Open this ' + esc(r.entity) + ' in Dynamics 365">' + inner + '<span class="go">↗</span></a>'
+      : '<div class="rec" title="The environment’s address is not known - open make.powerautomate.com’s environment list once">' + inner + '</div>';
+  }
+
+  function emailHtml(m) {
+    const att = m.attachments.map((a) => '<span class="att">' + esc(a.name) + (a.size ? ' <i>' + sizeText(a.size) + '</i>' : '') + '</span>').join('');
+    return (
+      '<div class="rec card">' + badge(m, m.kind) + '<span class="nm">' + (m.subject ? esc(m.subject) : '<i class="dim">no subject</i>') + '</span>' +
+      '<span class="how">' + line('To', m.to) + line('Cc', m.cc) + line('Bcc', m.bcc) + line('From', m.from ? [m.from] : []) + line('Answer', m.answer ? [m.answer] : []) +
+      (att ? '<span class="atts">' + att + '</span>' : '') +
+      'Sent ' + stepLink(m) + '</span></div>'
+    );
+  }
+
+  const WAITING = /^(Running|Waiting)$/i;
+  function approvalHtml(a) {
+    const out = a.outcome
+      ? '<span class="ent ' + (/^approve/i.test(a.outcome) ? 'good' : /^reject/i.test(a.outcome) ? 'bad' : '') + '">' + esc(a.outcome) + '</span>'
+      : badge(a, WAITING.test(a.status || '') ? 'waiting' : 'asked');
+    const said = a.responses
+      .map((r) => '<span class="who"><b>' + esc(r.who || 'Someone') + '</b> ' + esc(r.said) + (r.comments ? ' – “' + esc(short(r.comments)) + '”' : '') + '</span>')
+      .join('');
+    return (
+      '<div class="rec card">' + out + '<span class="nm">' + (a.title ? esc(a.title) : '<i class="dim">no title</i>') + '</span>' +
+      '<span class="how">' + (said || line(WAITING.test(a.status || '') ? 'Waiting for' : 'Asked', a.assigned)) + 'Asked in ' + stepLink(a) + '</span></div>'
+    );
+  }
+
+  function childHtml(c, env) {
+    const url = runUrl(env, c.flow, c.run);
+    const inner =
+      badge(c, 'flow') + '<span class="nm">' + nice(c.step) + '</span>' +
+      '<span class="how">' + ([c.ms > 0 ? took(c.ms) : '', c.run ? 'run …' + esc(c.run.slice(-8)) : ''].filter(Boolean).join(' · ') || 'Ran in ' + stepLink(c)) + '</span>';
+    return url
+      ? '<a class="rec run" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" title="Open this run of the child flow">' + inner + '<span class="go">↗</span></a>'
+      : '<div class="rec" title="Its answer does not name the child’s run">' + inner + '</div>';
+  }
+
+  function callHtml(c) {
+    const shown = c.uri.replace(SECRET_PARAM, '$1…');
+    const ok = c.code >= 200 && c.code < 400 && !FAILED.test(c.status || '');
+    return (
+      '<a class="ln" ' + goTo(c.at) + ' title="' + esc(shown + ' – ' + c.step.replace(/_/g, ' ')) + '"><span class="mth">' + esc(c.method) + '</span>' +
+      '<span class="k">' + esc(shown.replace(/^https?:\/\//i, '').replace(/[?#].*$/, '')) + '</span>' +
+      (c.code ? '<span class="pill ' + (ok ? 'st-succeeded' : 'st-failed') + '">' + esc(c.code) + '</span>' : FAILED.test(c.status || '') ? '<span class="pill st-failed">' + esc(c.status) + '</span>' : '') +
+      '</a>'
+    );
+  }
+
+  function variableHtml(v) {
+    const val = v.value === undefined ? '(none)' : short(v.value);
+    const tip = v.how + ' in ' + v.step.replace(/_/g, ' ') + (v.changes > 1 ? ' – changed ' + plural(v.changes, 'time') : '') + (v.partial ? ' – so far: its loop is not read to the end' : '');
+    return (
+      '<a class="ln var" ' + goTo(v.at) + ' title="' + esc(tip) + '">' +
+      '<span class="vn">' + esc(v.name) + '</span><span class="k vv">' + esc(val) + '</span>' + (v.partial ? '<span class="v dim">so far</span>' : '') + '</a>'
+    );
+  }
+
+  function slowHtml(x, i, all) {
+    return (
+      '<a class="ln slow" ' + goTo(x.at) + ' title="Go to this step"><span class="k">' + nice(x.name) + (x.s.loop ? ' <i class="dim">' + esc(x.s.loop) + '×</i>' : '') + '</span>' +
+      '<span class="v">' + took(x.ms) + '</span><span class="bar"><i style="width:' + Math.max(2, Math.round((x.ms / all[0].ms) * 100)) + '%"></i></span></a>'
+    );
+  }
+
+  function asideHtml(t) {
+    // What the run touched and did, beside the steps: each with a link.
+    const html =
+      part('Records', t.records, recordHtml, 'Every row this run read, created, changed or pointed at – click to open it in Dynamics 365.') +
+      part('Files', t.files, fileHtml, 'Every file this run created, changed, copied or read – the name opens the file, the line under it its folder.') +
+      part('Emails', t.emails, emailHtml) +
+      part('Approvals', t.approvals, approvalHtml) +
+      part('Child flows', t.children, (c) => childHtml(c, t.env)) +
+      part('HTTP calls', t.calls, callHtml) +
+      part('Variables', t.variables, variableHtml) +
+      part('Slowest steps', t.slowest, slowHtml);
+    return '<aside>' + (html || '<div class="rh"><b>Records</b><span class="cnt">0</span></div><div class="none">No Dataverse records or files in this run.</div>') + '</aside>';
   }
 
   const flowNameOf = (run) => {
@@ -822,17 +1444,42 @@
     return (p.flow && p.flow.properties && p.flow.properties.displayName) || 'Flow run';
   };
 
+  function startedHtml(st, env) {
+    if (!st) return '';
+    const link = (x, text) => {
+      const url = x ? runUrl(env, x.flow, x.run) : '';
+      return url ? ' – <a class="step run" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + text + ' ↗</a>' : '';
+    };
+    return (
+      '<div class="started">Started' + (st.how ? ' ' + esc(st.how) : '') +
+      (st.who || st.mail ? ' ' + (st.of || 'by') + ' <b>' + esc(st.who || st.mail) + '</b>' + (st.who && st.mail ? ' <span class="dim">' + esc(st.mail) + '</span>' : '') : '') +
+      link(st.parent, 'open its run') +
+      (st.test ? ' <span class="dim">· a test from the designer</span>' : '') +
+      (st.again ? link(st.again, st.test ? 'with the data of an earlier run' : 'resubmitted from an earlier run') : '') +
+      '</div>'
+    );
+  }
+
+  function startedJson(st, env) {
+    if (!st) return undefined;
+    const url = (x) => (x && runUrl(env, x.flow, x.run)) || undefined;
+    return { how: st.how || undefined, who: st.who || undefined, mail: st.mail || undefined, test: st.test || undefined, parentRun: url(st.parent), resubmittedFrom: url(st.again) };
+  }
+
   // The run as JSON - what Copy everything and Download give.
   function payloadOf(ctx) {
     const p = ctx.run.properties || {};
     const failure = failureOf(ctx.top, ctx.loops);
     const partial = ctx.L.reduce((n, l) => n + l.iterations.filter((it) => it.actions.some((a) => !a.loaded)).length, 0);
+    const touched = touchedOf(ctx);
     return {
       flow: flowNameOf(ctx.run),
       run: ctx.run.name,
       status: p.status,
       startTime: p.startTime,
       endTime: p.endTime,
+      took: took(spanOf(p)) || undefined,
+      startedBy: startedJson(startedOf(ctx.top, ctx.run), touched.env),
       error: p.error,
       failure: failure
         ? {
@@ -843,7 +1490,40 @@
             skippedAfter: failure.skipped || undefined
           }
         : undefined,
-      records: recordsOf(ctx).map((r) => ({ table: r.entity, id: r.id, name: r.name || undefined, url: r.host ? recordUrl(r) : undefined, steps: r.how })),
+      records: touched.records.map((r) => ({ table: r.entity, id: r.id, name: r.name || undefined, url: r.host ? recordUrl(r) : undefined, steps: r.how })),
+      files: touched.files.length
+        ? touched.files.map((f) => ({
+            name: f.name,
+            in: f.service,
+            site: f.site || undefined,
+            path: f.path || undefined,
+            size: f.size ? sizeText(f.size) : undefined,
+            url: f.link || undefined,
+            folder: f.folderLink || undefined,
+            steps: f.how
+          }))
+        : undefined,
+      emails: touched.emails.length
+        ? touched.emails.map((m) => ({
+            kind: m.kind === 'email' ? undefined : m.kind,
+            subject: m.subject,
+            to: m.to,
+            cc: m.cc.length ? m.cc : undefined,
+            bcc: m.bcc.length ? m.bcc : undefined,
+            from: m.from || undefined,
+            attachments: m.attachments.length ? m.attachments.map((a) => a.name + (a.size ? ' (' + sizeText(a.size) + ')' : '')) : undefined,
+            answer: m.answer || undefined,
+            step: m.step,
+            status: m.status
+          }))
+        : undefined,
+      approvals: touched.approvals.length ? touched.approvals.map((a) => ({ title: a.title, outcome: a.outcome || undefined, assignedTo: a.assigned.length ? a.assigned : undefined, responses: a.responses.length ? a.responses : undefined, step: a.step })) : undefined,
+      childFlows: touched.children.length ? touched.children.map((c) => ({ step: c.step, status: c.status, run: c.run || undefined, url: runUrl(touched.env, c.flow, c.run) || undefined })) : undefined,
+      httpCalls: touched.calls.length ? touched.calls.map((c) => ({ method: c.method, uri: c.uri, statusCode: c.code, step: c.step })) : undefined,
+      variables: touched.variables.length
+        ? touched.variables.map((v) => ({ name: v.name, type: v.type || undefined, value: slim(v.value, 0), lastSetIn: v.step, note: v.partial ? 'so far - its loop is not read to the end' : undefined }))
+        : undefined,
+      slowestSteps: touched.slowest.length ? touched.slowest.map((x) => ({ step: x.name, took: took(x.ms) })) : undefined,
       steps: ctx.top.map(stepJson),
       loops: ctx.L.length
         ? ctx.L.map((l) => ({
@@ -857,6 +1537,83 @@
         : undefined,
       note: partial ? 'Inputs and outputs of ' + plural(partial, 'iteration') + ' not included (a large loop) - open one in the tab and use Copy iteration.' : undefined
     };
+  }
+
+  /* Copy without personal data: what Copy everything gives, with the people
+   * in it - names, emails, phone numbers, addresses - and the keys,
+   * passwords and signatures replaced, so it can go into a ticket. Each
+   * person and each email keeps one number all through (<person 1>,
+   * <email 2>), so the run still reads. Only what it recognises - the note
+   * at the top says so. */
+  const PERSON_KEY = /^(fullname|firstname|lastname|givenname|surname|mailnickname|middlename|nickname|yomifullname|yomifirstname|yomilastname|requestor|responder|respondername|who|username|x-ms-user-name|x-ms-user-name-encoded)$/i;
+  const PERSON_LOOKUP = /^_(createdby|modifiedby|createdonbehalfby|modifiedonbehalfby|owninguser|ownerid|[a-z0-9_]*(user|contact|lead)[a-z0-9_]*)_value@OData\.Community\.Display\.V1\.FormattedValue$/i;
+  const PERSON_TABLE = /^(contact|systemuser|lead)$/i;
+  const PRIVATE_KEY = /e-?mail|phone|mobile|fax|address|street|postal|zip|birth|iban|password|passwd|secret|token|api-?key|(^|[-_])key$|authorization|cookie|signature|^sig$|forwarded|client-ip|coordinates|latitude|longitude/i;
+  const EMAIL = /[a-z0-9._%+#-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}/gi;
+  const SECRET_PARAM = /((?:^|[?&])([a-z_-]*(key|secret|token)|sig|signature|code|password)=)[^&#\s"]+/gim;
+  const BEARER = /\b(Bearer|Basic)\s+[a-z0-9._~+/=-]{8,}/gi;
+  const JWT = /\beyJ[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\.[a-z0-9_-]*/gi;
+
+  function anonymised(payload) {
+    const people = new Map();
+    const mails = new Map();
+    const last = (k) => String(k || '').split('/').pop();
+    const person = (n) => {
+      n = String(n).trim();
+      if (n.length >= 3 && !EMAIL.test(n) && !people.has(n)) people.set(n, '<person ' + (people.size + 1) + '>');
+      EMAIL.lastIndex = 0;
+    };
+    const find = (v, k, d) => {
+      if (v == null || d > 40) return;
+      if (typeof v === 'string') {
+        if (PERSON_KEY.test(last(k)) || PERSON_LOOKUP.test(k)) person(v);
+        return;
+      }
+      if (typeof v !== 'object') return;
+      if (Array.isArray(v)) return v.forEach((x) => find(x, k, d + 1));
+      if (typeof v.table === 'string' && PERSON_TABLE.test(v.table) && v.name) person(v.name);
+      // Someone as Microsoft 365 gives them: a name beside an email.
+      if (typeof v.displayName === 'string' && (v.email || v.mail || v.userPrincipalName || v.userIdentityType || v.Email || v.Address)) person(v.displayName);
+      if (typeof v.DisplayName === 'string' && (v.Email || v.Address || v.EmailAddress || v.Mail || v.UserPrincipalName)) person(v.DisplayName);
+      if (typeof v.name === 'string' && typeof v.address === 'string' && v.address.includes('@')) person(v.name);
+      for (const key of Object.keys(v)) find(v[key], key, d + 1);
+    };
+    find(payload, '', 0);
+    const names = Array.from(people.keys()).sort((a, b) => b.length - a.length);
+    // Whole words only: Ann is not replaced in Annual.
+    const nameRe = names.length ? new RegExp('(?<![\\p{L}\\p{N}])(?:' + names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')(?![\\p{L}\\p{N}])', 'gu') : null;
+    const text = (t) => {
+      t = t
+        .replace(EMAIL, (m) => {
+          const k = m.toLowerCase();
+          if (!mails.has(k)) mails.set(k, '<email ' + (mails.size + 1) + '>');
+          return mails.get(k);
+        })
+        .replace(SECRET_PARAM, '$1<removed>')
+        .replace(BEARER, '$1 <removed>')
+        .replace(JWT, '<removed>');
+      return nameRe ? t.replace(nameRe, (m) => people.get(m)) : t;
+    };
+    const clean = (v, k, d) => {
+      if (v == null || d > 40) return v;
+      if (Array.isArray(v)) return v.map((x) => clean(x, k, d + 1));
+      if (typeof v === 'object') {
+        const o = {};
+        for (const key of Object.keys(v)) o[key] = clean(v[key], key, d + 1);
+        return o;
+      }
+      const key = last(k);
+      if (typeof v === 'string' && (PERSON_KEY.test(key) || PERSON_LOOKUP.test(k))) return people.get(v.trim()) || text(v);
+      if (PRIVATE_KEY.test(key) && v !== '' && typeof v !== 'boolean') {
+        const t = typeof v === 'string' ? text(v) : '';
+        return t && /^(<email \d+>[;,\s]*)+$/.test(t) ? t : '<removed>';
+      }
+      return typeof v === 'string' ? text(v) : v;
+    };
+    return Object.assign(
+      { anonymised: 'People’s names, emails, phone numbers and addresses, keys, passwords and signatures are replaced as far as recognised - read it before you share it.' },
+      clean(payload, '', 0)
+    );
   }
 
   // The export tab inherits the portal's content security policy, which
@@ -914,8 +1671,10 @@
       '<header><h1>' + esc(flowName) + '</h1>' +
       '<div class="crumbs">Run ' + esc(run.name) + ' &middot; ' + esc(p.status || '') +
       (p.startTime ? ' &middot; ' + esc(p.startTime) : '') +
+      (took(spanOf(p)) ? ' &middot; took ' + took(spanOf(p)) : '') +
       ' &middot; ' + ctx.top.length + ' steps' +
       (L.length ? ' &middot; ' + plural(L.length, 'loop') : '') + '</div>' +
+      startedHtml(startedOf(ctx.top, run), envOf(run)) +
       // The run's own "An action failed" says nothing Where it failed does not.
       (p.error && !(failure && followed(p))
         ? '<div class="err"><b>' + esc(p.error.code || 'Error') + '</b> ' +
@@ -926,6 +1685,7 @@
         ? '<div class="note">Loop iterations could not be read (' + esc(ctx.loops.error) + ') – a loop’s actions are shown once, as the run reports them.</div>'
         : '') +
       '<div class="actions"><button id="copy" class="primary">Copy everything</button>' +
+      '<button id="anon" title="Everything, with people’s names, emails, phone numbers and addresses, keys, passwords and signatures replaced – to paste into a ticket">Copy without personal data</button>' +
       '<button id="json">Download JSON</button></div></header>';
 
     return (
@@ -947,6 +1707,26 @@
       '.how{display:block;margin-top:3px;font-size:12px;color:var(--dbc-fg-56637f)}.how .step{color:var(--dbc-fg-10224e)}' +
       '.go{position:absolute;top:8px;right:9px;color:var(--dbc-fg-1e6bff);font-size:13px}' +
       '.none{margin:6px 2px 8px;font-size:13px;color:var(--dbc-fg-56637f)}' +
+      'aside .rh~.rh{margin-top:16px}' +
+      '.started{margin-top:2px;font-size:13px;color:var(--dbc-fg-56637f)}.started b{color:var(--dbc-fg-10224e);font-weight:600}.started .dim{margin-left:2px}' +
+      '.card{padding-right:10px}.hw{display:block}' +
+      '.ent.good{background:var(--dbc-bg-e4f4e8);color:var(--dbc-fg-1c6b32)}.ent.bad{background:var(--dbc-bg-fde8e8);color:var(--dbc-fg-a11a1a)}' +
+      '.how .who{display:block;margin-bottom:2px;color:var(--dbc-fg-10224e);word-break:break-word}.how .who b{margin-right:3px;color:var(--dbc-fg-56637f);font-weight:600}' +
+      '.cols{display:block;margin:1px 0 3px;font:11.5px ui-monospace,Consolas,monospace;color:var(--dbc-fg-56637f);word-break:break-word}' +
+      'a.step{color:var(--dbc-fg-10224e);text-decoration:none}a.step:hover{color:var(--dbc-fg-1e6bff);text-decoration:underline}' +
+      '.atts{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}.att{padding:1px 7px;border:1px solid var(--dbc-bd-dde3f0);border-radius:5px;font-size:11.5px;color:var(--dbc-fg-10224e)}.att i{font-style:normal;color:var(--dbc-fg-56637f)}' +
+      '.dim{font-style:normal;font-weight:400;color:var(--dbc-fg-56637f)}' +
+      '.ln{display:flex;align-items:center;flex-wrap:wrap;gap:3px 8px;margin:0 0 2px;padding:5px 7px;border-radius:6px;color:inherit;text-decoration:none;font-size:12.5px}' +
+      'a.ln:hover{background:var(--dbc-bg-f5f7fc)}' +
+      '.ln .k{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ln .v{color:var(--dbc-fg-56637f);font-variant-numeric:tabular-nums}' +
+      '.ln .pill{padding:0 6px;font-size:11px}' +
+      '.mth{min-width:34px;font:600 11px ui-monospace,Consolas,monospace;color:var(--dbc-fg-1e6bff)}' +
+      '.vn{font:600 12px ui-monospace,Consolas,monospace;color:var(--dbc-fg-10224e)}.vv{text-align:right;font:12px ui-monospace,Consolas,monospace;color:var(--dbc-fg-56637f)}' +
+      '.bar{flex-basis:100%;height:4px;border-radius:2px;background:var(--dbc-bg-eef2f9)}.bar i{display:block;height:100%;border-radius:2px;background:var(--dbc-bg-e3b04b)}' +
+      '.file{padding-right:10px}.file .ent{background:var(--dbc-bg-eef2f9);color:var(--dbc-fg-56637f)}' +
+      '.fn{font-weight:600;color:inherit;text-decoration:none;word-break:break-word}.fn:hover{color:var(--dbc-fg-1e6bff);text-decoration:underline}' +
+      '.fgo{margin-left:5px;color:var(--dbc-fg-1e6bff);font-size:12px;font-weight:400}' +
+      '.fold{display:block;margin-top:3px;font-size:12px;color:var(--dbc-fg-56637f);text-decoration:none;word-break:break-all}a.fold:hover{color:var(--dbc-fg-1e6bff);text-decoration:underline}' +
       'h1{margin:0 0 4px;font-size:20px}' +
       'h2{margin:0 0 6px;font-size:15px;font-weight:600}' +
       'h3{margin:12px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--dbc-fg-56637f)}' +
@@ -1007,7 +1787,7 @@
       DynaBoost.tabCss +
       '</style>' +
       head +
-      '<div class="wrap"><main>' + rows + rest + '</main>' + asideHtml(recordsOf(ctx)) + '</div>'
+      '<div class="wrap"><main>' + rows + rest + '</main>' + asideHtml(touchedOf(ctx)) + '</div>'
     );
   }
 
@@ -1078,7 +1858,7 @@
         const aside = doc.querySelector('aside');
         if (!aside || tab.closed) return;
         const top = aside.scrollTop;
-        aside.outerHTML = asideHtml(recordsOf(ctx));
+        aside.outerHTML = asideHtml(touchedOf(ctx));
         doc.querySelector('aside').scrollTop = top;
       }, 300);
     };
@@ -1163,10 +1943,13 @@
     };
 
     doc.addEventListener('click', (e) => {
-      const t = e.target && e.target.closest ? e.target.closest('a.rec,[data-go],[data-it],[data-f],.lp-nav,.lp-ci,.lp-cf') : null;
+      const t = e.target && e.target.closest ? e.target.closest('a.rec,a.run,a.fn,a.fold,[data-go],[data-it],[data-f],.lp-nav,.lp-ci,.lp-cf') : null;
       if (!t) return;
       // A record opened from the Records column: a use of its own, per click.
+      if (t.matches('a.run')) return DynaBoost.saved('flow-run-export', 'child');
       if (t.matches('a.rec')) return DynaBoost.saved('flow-run-export', 'record');
+      // A file or its folder opened from the Files list: the same, per click.
+      if (t.matches('a.fn,a.fold')) return DynaBoost.saved('flow-run-export', 'file');
       e.preventDefault();
       if (t.hasAttribute('data-go')) {
         const to = doc.getElementById(t.getAttribute('data-go'));
@@ -1236,6 +2019,17 @@
         flash(copyBtn, ok ? 'Copied' : 'Copy failed – click again', ok);
       })
     );
+
+    const anonBtn = doc.getElementById('anon');
+    if (anonBtn) {
+      anonBtn.addEventListener('click', () =>
+        whole(anonBtn, async (text) => {
+          const ok = await copyInto(tab, JSON.stringify(anonymised(JSON.parse(text)), null, 2));
+          flash(anonBtn, ok ? 'Copied' : 'Copy failed – click again', ok);
+          if (ok) DynaBoost.saved('flow-run-export', 'anonymised');
+        })
+      );
+    }
 
     jsonBtn.addEventListener('click', () =>
       whole(jsonBtn, (text) => {

@@ -274,23 +274,30 @@
 
   const starHtml = () => '<button type="button" class="db-imp-star" aria-pressed="false">' + STAR + '</button>';
 
-  function openPicker() {
+  /* mode 'access': the same search, for User access (user-access.js) - a pick
+   * opens that user's access tab instead. */
+  function openPicker(mode) {
     if (closePicker) return;
+    const forAccess = mode === 'access';
+    // In Impersonate: Access on a user's row (or yours now) - their roles and environments.
+    const accHtml = () => (DynaBoost.userAccess && !forAccess ? '<button type="button" class="db-imp-acc" title="Their roles and teams, here and in your other environments">Access ↗</button>' : '');
     DynaBoost.closePanel();
     const overlay = document.createElement('div');
     overlay.className = 'db-overlay' + (DynaBoost.isDark() ? ' db-dark' : '');
     overlay.innerHTML =
-      '<div class="db-dialog db-imp" role="dialog" aria-label="Impersonate">' +
-      '<div class="db-dialog-head"><span>' + (current ? 'Switch user' : 'Impersonate') + '</span>' +
+      '<div class="db-dialog db-imp" role="dialog" aria-label="' + (forAccess ? 'User access' : 'Impersonate') + '">' +
+      '<div class="db-dialog-head"><span>' + (forAccess ? 'User access' : current ? 'Switch user' : 'Impersonate') + '</span>' +
       '<button type="button" data-db="close" aria-label="Close">✕</button></div>' +
-      (current
-        ? '<div class="db-imp-now">' + whoHtml(current) + starHtml() + '<button type="button" class="db-imp-stop" data-db="stop">Stop</button></div>'
+      (forAccess
+        ? '<div class="db-imp-lead">Pick a user - their roles and teams here and in your other environments, side by side; roles copied between them.</div>'
+        : current
+        ? '<div class="db-imp-now">' + whoHtml(current) + accHtml() + starHtml() + '<button type="button" class="db-imp-stop" data-db="stop">Stop</button></div>'
         : '<div class="db-imp-lead">Work in this tab as another user - their records, access and saves. Other tabs stay you.</div>') +
       '<label class="db-imp-search">' + LOOK +
       '<input type="text" data-db="q" placeholder="Name, email or user name" autocomplete="off" spellcheck="false" aria-label="Search users"></label>' +
       '<div class="db-imp-list" role="listbox" data-db="list"></div>' +
       '<div class="db-imp-note" data-db="note"></div>' +
-      '<div class="db-imp-foot">Needs the Act on Behalf of Another User privilege · ↑ ↓ Enter to pick</div>' +
+      '<div class="db-imp-foot">' + (forAccess ? 'Reads with your own rights · ↑ ↓ Enter to pick' : 'Needs the Act on Behalf of Another User privilege · ↑ ↓ Enter to pick') + '</div>' +
       '</div>';
     document.body.appendChild(overlay);
     const q = (k) => overlay.querySelector('[data-db="' + k + '"]');
@@ -320,7 +327,7 @@
       document.removeEventListener('keydown', onKey, true);
       closePicker = null;
       // Opened from the tile and nobody picked: the tile goes off again.
-      if (!current && lit) {
+      if (!forAccess && !current && lit) {
         lit = false;
         if (resetTile) resetTile();
       }
@@ -331,8 +338,10 @@
       if (e.target === overlay && !busy) close();
     });
     q('close').addEventListener('click', () => !busy && close());
-    if (current) {
+    if (current && !forAccess) {
       q('stop').addEventListener('click', () => !busy && stop());
+      const acc = overlay.querySelector('.db-imp-now .db-imp-acc');
+      if (acc) acc.addEventListener('click', () => !busy && toAccess(current));
       const star = overlay.querySelector('.db-imp-now .db-imp-star');
       star.addEventListener('click', () => !busy && toggleFav(current));
       loaded.then(() => paintStar(star, current));
@@ -374,14 +383,27 @@
       else showStart(active);
     }
 
+    // To User access: this dialog goes, the user's tab opens - within the click.
+    function toAccess(u) {
+      close();
+      DynaBoost.userAccess.open(u);
+    }
+
     function row(u, i) {
-      const now = isNow(u);
+      const now = !forAccess && isNow(u);
       const el = document.createElement('div');
       el.className = 'db-imp-row';
       el.setAttribute('role', 'option');
       if (now) el.setAttribute('aria-disabled', 'true');
       el.title = u.name + (u.email ? ' - ' + u.email : '');
-      el.innerHTML = whoHtml(u) + '<span class="db-imp-go">' + (now ? 'Now' : 'Impersonate') + '</span>' + starHtml();
+      el.innerHTML = whoHtml(u) + '<span class="db-imp-go">' + (forAccess ? 'Access' : now ? 'Now' : 'Impersonate') + '</span>' + accHtml() + starHtml();
+      const acc = el.querySelector('.db-imp-acc');
+      if (acc) {
+        acc.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!busy) toAccess(u);
+        });
+      }
       const star = el.querySelector('.db-imp-star');
       paintStar(star, u);
       star.addEventListener('click', () => !busy && toggleFav(u));
@@ -405,11 +427,15 @@
         }
         for (const u of g.users) list.appendChild(row(u, items.push(u) - 1));
       }
-      const first = items.findIndex((u) => !isNow(u));
-      mark(keep != null && keep < items.length && !isNow(items[keep]) ? keep : first < 0 ? 0 : first);
+      const first = forAccess ? 0 : items.findIndex((u) => !isNow(u));
+      mark(keep != null && keep < items.length && (forAccess || !isNow(items[keep])) ? keep : first < 0 ? 0 : first);
     }
 
     async function pick(i) {
+      if (forAccess) {
+        if (items[i]) toAccess(items[i]);
+        return;
+      }
       const user = items[i];
       if (!user || busy || isNow(user)) return;
       busy = true;
@@ -568,6 +594,8 @@
     }
   };
   DynaBoost.register(feature);
+  // User access picks its user with this search (user-access.js).
+  DynaBoost.impersonate = { pick: () => onOrg() && openPicker('access') };
 
   if (onOrg()) {
     send({ type: 'DB_IMP_GET' }).then((imp) => {

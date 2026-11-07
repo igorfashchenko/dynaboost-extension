@@ -225,6 +225,10 @@
    * @param {Function} [feature.onEnable]   toggles only
    * @param {Function} [feature.onDisable]  toggles only
    * @param {Function} [feature.onRun]      actions only
+   * @param {Function} [feature.settings]   a tool with settings: the pencil in
+   *                                   the tile's corner - shown when the
+   *                                   pointer is on the tile - opens them
+   * @param {string} [feature.settingsHint] the pencil's tooltip
    * @param {boolean}  [feature.panelResult] actions only: the panel stays open
    *                                        and onRun(ui) answers in it, in a
    *                                        card that folds down under the
@@ -454,8 +458,56 @@
 
   const GUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
-  /* What the page is about, from the URL only: { kind, id, sub } or null.
-   * A record that has not been saved yet has no id. */
+  /* The Dynamics 365 page: { type, etn, id, viewId } - type 'entityrecord',
+   * 'entitylist' or another of the app's page types, etn the table, id the
+   * record ('' for one not saved yet), viewId and viewType the list's view
+   * ('' when not said). From the app itself when it has told us for this address
+   * (src/page-hook.js, Xrm.Utility.getPageContext): a multisession app keeps
+   * one address for every session, and the record you see is only there.
+   * Else from the address, as every app also writes it. Every tool asks this,
+   * never the address itself. */
+  let fromApp = null; // { page, href } - the hook's last word
+  const guidIn = (s) => {
+    const m = String(s || '').match(GUID);
+    return m ? m[0].toLowerCase() : '';
+  };
+  function pageHere() {
+    if (fromApp && fromApp.href === location.href && fromApp.page) return Object.assign({}, fromApp.page);
+    const q = new URLSearchParams(location.search);
+    const etn = (q.get('etn') || '').toLowerCase();
+    const id = guidIn(q.get('id'));
+    const type = q.get('pagetype') || (etn && id ? 'entityrecord' : '');
+    return { type: type, etn: etn, id: id, viewId: guidIn(q.get('viewid')), viewType: q.get('viewType') || '' };
+  }
+
+  if (!inFrame && /\.dynamics\.com$/i.test(location.hostname)) {
+    window.addEventListener('message', (e) => {
+      const d = e.data;
+      if (e.source !== window || !d || d.source !== 'dynaboost-page' || typeof d.href !== 'string') return;
+      const p = d.page;
+      const page =
+        p && typeof p.type === 'string' && /^[a-z]{1,40}$/i.test(p.type)
+          ? { type: p.type.toLowerCase(), etn: /^[a-z0-9_]{1,128}$/i.test(p.etn) ? p.etn.toLowerCase() : '', id: guidIn(p.id), viewId: guidIn(p.viewId), viewType: /^\d{1,6}$/.test(p.viewType) ? p.viewType : '' }
+          : null;
+      const before = JSON.stringify(pageHere());
+      fromApp = { page: page, href: d.href };
+      // Another page in the same address (a session switched): as when the address moves.
+      if (JSON.stringify(pageHere()) !== before) pageMoved();
+    });
+    const hook = () => {
+      const s = document.createElement('script');
+      s.src = chrome.runtime.getURL('src/page-hook.js');
+      s.onload = () => s.remove();
+      (document.head || document.documentElement).appendChild(s);
+      // Already there (the extension updated): tell it again.
+      window.postMessage({ source: 'dynaboost-page-ask' }, location.origin);
+    };
+    if (document.documentElement) hook();
+    else document.addEventListener('readystatechange', hook, { once: true });
+  }
+
+  /* What the page is about: { kind, id, sub } or null. A record that has not
+   * been saved yet has no id. */
   function detectContext() {
     const host = location.hostname.toLowerCase();
     const path = location.pathname;
@@ -466,11 +518,10 @@
     };
 
     if (host.endsWith('.dynamics.com')) {
-      const etn = q.get('etn');
-      const id = guid(q.get('id'));
-      if (id) return { kind: 'Record', id: id, sub: etn };
-      if (q.get('pagetype') === 'entityrecord' && etn) return { kind: 'Record', id: null, sub: etn + ' \u2014 not saved yet' };
-      if (etn) return { kind: 'Table', id: etn, sub: null };
+      const pg = pageHere();
+      if (pg.id && pg.etn) return { kind: 'Record', id: pg.id, sub: pg.etn };
+      if (pg.type === 'entityrecord' && pg.etn) return { kind: 'Record', id: null, sub: pg.etn + ' \u2014 not saved yet' };
+      if (pg.etn) return { kind: 'Table', id: pg.etn, sub: null };
       const app = guid(q.get('appid'));
       if (app) return { kind: 'App', id: app, sub: null };
       return null;
@@ -524,6 +575,48 @@
         return false;
       }
     }
+  }
+
+  /* The Dataverse Web API of the page's own environment, for the tools:
+   *   DynaBoost.webApi('accounts?$select=name&$top=5')
+   *   DynaBoost.webApi('accounts(<id>)', { method: 'PATCH', body: { name: 'x' } })
+   *   DynaBoost.webApi('WhoAmI', { host: 'yourorg.crm4.dynamics.com' })
+   * The path is relative to /api/data/v9.2/, or a whole URL. Gives the JSON
+   * of the answer (null when it has none, 204); an answer that is not ok
+   * throws an Error with Dataverse's message, its .status and the path.
+   * Options: method, body (an object, sent as JSON), headers (added to the
+   * OData ones), prefer (the Prefer header - formatted values are on by
+   * default), host (another environment, same sign-in), signal. */
+  async function webApi(path, opts) {
+    const o = opts || {};
+    const base = o.host ? 'https://' + String(o.host).replace(/^https?:\/\//, '').replace(/\/+$/, '') : '';
+    const url = /^https?:\/\//i.test(path) ? path : base + '/api/data/v9.2/' + String(path).replace(/^\/+/, '');
+    const headers = Object.assign(
+      { Accept: 'application/json', 'OData-Version': '4.0', 'OData-MaxVersion': '4.0', Prefer: o.prefer || 'odata.include-annotations="*"' },
+      o.body !== undefined ? { 'Content-Type': 'application/json; charset=utf-8' } : {},
+      o.headers || {}
+    );
+    const res = await fetch(url, {
+      method: o.method || (o.body !== undefined ? 'POST' : 'GET'),
+      credentials: o.host ? 'include' : 'same-origin',
+      headers: headers,
+      body: o.body !== undefined ? (typeof o.body === 'string' ? o.body : JSON.stringify(o.body)) : undefined,
+      signal: o.signal
+    });
+    if (!res.ok) {
+      let msg = '';
+      try {
+        msg = ((await res.json()).error || {}).message || '';
+      } catch (e) {
+        /* no message in the answer */
+      }
+      const err = new Error(msg || 'Dataverse answered ' + res.status);
+      err.status = res.status;
+      err.path = path;
+      throw err;
+    }
+    if (res.status === 204 || !(res.headers.get('content-type') || '').includes('json')) return null;
+    return res.json();
   }
 
   function updateContext() {
@@ -704,27 +797,38 @@
    * and leads to What's new. Skip, the ×, What's new or closing the panel
    * ends it, in every tab, until the next update. The tour's tiles wear a
    * gold NEW until each is used once. The steps are TOUR's - a few of the
-   * release's tools. */
+   * release's tools; with TOUR.film the first card is the release's film on
+   * YouTube (a picture drawn here, the video opens in a tab on a click), and
+   * Tour -> goes on to the tiles. */
   const TOUR = {
-    v: '2.41',
+    v: '2.42',
     steps: [
-      { id: 'canvas-check', title: 'App checker report', text: 'Every App checker issue of a canvas app in one tab – the formula with each problem underlined.', where: 'Power Apps Studio · a canvas app' },
-      { id: 'any-table', title: 'Open any table', text: 'Any table of the environment – also one the app leaves out – as a view or a new form, right in the app you are in.', where: 'Dynamics 365 · a model-driven app' },
-      { id: 'wiki-tree', title: 'Copy wiki tree', text: 'Every page of an Azure DevOps wiki, folded ones too, on the clipboard in one click – or saved as a Markdown text file, every page a link.', where: 'Azure DevOps · a wiki' },
-      { id: 'lower-schema', title: 'Lowercase schema names', text: 'A switch: the schema name of a new table, column or choice stays in lower case as you type – new_myfield, not new_MyField.', where: 'Power Apps · New table, column or choice' }
+      { id: 'record-history', title: 'Record history', text: 'Every audited change of this record in one tab – who, when, each field’s old and new value.', where: 'Dynamics 365 · a record' },
+      { id: 'last-change', title: 'Last change', text: 'A switch: under every field label, its last change – old → new; click it for the field’s history.', where: 'Dynamics 365 · a record' },
+      { id: 'clear-cache', title: 'Clear cache', text: 'A form or list still showing its old version? What this site keeps in the browser, cleared and reloaded – never cookies.', where: 'every site' },
+      { id: 'component-names', title: 'Component names', text: 'A switch: in the form designer a tab, section or subgrid takes its name from its label – sec_report_parameters.', where: 'Power Apps · the form designer' }
     ],
     // On the last step, a gold card: how many more the release has (its What's
     // new entry, less the tour's tools and the tour itself), a few of them.
-    more: { n: 8, chips: ['My shortcuts · apps', 'Export run · loops', 'Edit flow · faster'], rest: '+ fixes' }
+    more: { n: 8, chips: ['Form as JSON · Filter, Edit', 'Export run · Files', 'God mode stays on'], rest: '+ fixes' },
+    // The release's film (help.js FILMS lists them all): its link and length.
+    film: { url: 'https://youtu.be/YfL8spDGdVI', len: '1:32' }
   };
+  // The tour and its NEW live on main only - premain is for work, not for
+  // being shown what is new. Released: on.
+  const TOUR_ON = true;
   let tourDue = null; // the version updated to, while its tour waits
   let tourNew = new Set(); // tiles wearing NEW
   let tour = null; // { at, tip } while shown
 
-  const tourSteps = () => TOUR.steps.filter((st) => features.some((f) => f.id === st.id));
+  const tourTiles = () => TOUR.steps.filter((st) => features.some((f) => f.id === st.id));
+  const tourSteps = () => {
+    const tiles = tourTiles();
+    return TOUR.film && tiles.length ? [{ film: TOUR.film }].concat(tiles) : tiles;
+  };
   const tourStepId = () => {
     const steps = tourSteps();
-    return tour && tour.at < steps.length ? steps[tour.at].id : null;
+    return tour && tour.at < steps.length ? steps[tour.at].id || null : null;
   };
 
   function maybeTour() {
@@ -734,7 +838,7 @@
     tour = { at: 0, tip: null };
     // NEW on the tour's tiles, for this version, until each is used.
     if (!tourNew.size) {
-      tourNew = new Set(steps.map((st) => st.id));
+      tourNew = new Set(tourTiles().map((st) => st.id));
       store({ [TOUR_NEW_KEY]: { v: TOUR.v, ids: Array.from(tourNew) } });
     }
     refs.mid.addEventListener('scroll', placeTip, { passive: true });
@@ -757,8 +861,10 @@
     const tip = (tour.tip = el('div', 'db-tour-tip'));
     tip.setAttribute('role', 'dialog');
     const dots = '<span class="db-tour-dots">' + steps.map((x, i) => '<i' + (i <= at ? ' class="on"' : '') + '></i>').join('') + '</span>';
-    const kick = '<div class="db-tour-k">New in ' + TOUR.v + ' · ' + (at + 1) + ' of ' + steps.length + '</div>';
     const st = steps[at];
+    if (st.film) return showFilm(tip, st.film, dots);
+    const lead = steps[0].film ? 1 : 0; // the film card is not one of the new tools
+    const kick = '<div class="db-tour-k">New in ' + TOUR.v + ' · ' + (at + 1 - lead) + ' of ' + (steps.length - lead) + '</div>';
     const here = usable(features.find((x) => x.id === st.id));
     const tile = refs.body.querySelector('.db-tile[data-db-id="' + st.id + '"]');
     if (tile) {
@@ -808,6 +914,43 @@
     placeTip();
     const go = tip.querySelector('.db-tour-go');
     if (go) go.focus({ preventScroll: true });
+  }
+
+  // The first card: the release's film. A picture of it (the version, YouTube's
+  // play, its length) - a click opens the film in a tab and the tour stays; one
+  // line says where the film is later. Skip, or Tour -> to the tiles.
+  function showFilm(tip, film, dots) {
+    const close =
+      '<button type="button" class="db-tour-x" data-tour="close" title="Close" aria-label="Close">' +
+      '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>';
+    tip.classList.add('db-tour-tip-film');
+    tip.innerHTML =
+      '<div class="db-tour-head"><div class="db-tour-k">DynaBoost ' + TOUR.v + ' is here</div>' + close + '</div>' +
+      '<a class="db-tour-film" target="_blank" rel="noopener noreferrer" title="Watch on YouTube">' +
+      '<span class="db-tour-film-l"><span class="db-tour-film-n"><img alt="">DynaBoost</span>' +
+      '<span class="db-tour-film-k">What’s new in</span><b class="db-tour-film-v"></b></span>' +
+      '<i class="db-tour-film-play"></i><em></em></a>' +
+      '<b class="db-tour-t"></b><p class="db-tour-p">Watch the film – or take the short tour here.</p>' +
+      '<div class="db-tour-note"><i>i</i>The film stays in the help, under What’s new.</div>' +
+      '<div class="db-tour-row">' + dots + '<button type="button" data-tour="skip">Skip</button>' +
+      '<button type="button" class="db-tour-go" data-tour="next">Tour →</button></div>';
+    const a = tip.querySelector('.db-tour-film');
+    a.href = film.url;
+    a.setAttribute('aria-label', 'Watch what’s new in ' + TOUR.v + ' on YouTube, ' + film.len);
+    a.querySelector('img').src = ICON_URL;
+    a.querySelector('.db-tour-film-v').textContent = TOUR.v;
+    a.querySelector('em').textContent = film.len;
+    tip.querySelector('.db-tour-t').textContent = 'What’s new in ' + TOUR.v;
+    tour.tile = null;
+    tip.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-tour]');
+      if (!b) return;
+      if (b.getAttribute('data-tour') === 'next') showStep(tour.at + 1);
+      else endTour();
+    });
+    root.appendChild(tip);
+    placeTip();
+    tip.querySelector('.db-tour-go').focus({ preventScroll: true });
   }
 
   // Beside the tile, left of the panel, kept on the screen; its arrow at the tile.
@@ -1309,6 +1452,15 @@
   let watchedHref = '';
   let savedTimer = null;
 
+  // Another page under the open panel - a new address, or another session in
+  // the same one: an answer was about the page before.
+  function pageMoved() {
+    if (!watchTimer) return; // closed: drawn afresh as it opens
+    dropResult();
+    updateContext();
+    render();
+  }
+
   function setPanel(open) {
     if (!root) return;
     if (open) {
@@ -1326,10 +1478,7 @@
         watchTimer = setInterval(() => {
           if (location.href === watchedHref) return;
           watchedHref = location.href;
-          // An answer was about the page before.
-          dropResult();
-          updateContext();
-          render();
+          pageMoved();
         }, 700);
       }
     } else {
@@ -1556,6 +1705,27 @@
     if (tourNew.has(feature.id) && !arranging) tile.appendChild(el('span', 'db-tile-new', 'NEW'));
 
     if (feature.type === 'toggle') tile.setAttribute('aria-pressed', String(here && isOn(feature.id)));
+    // A tool's settings: the pencil in its corner, there while the pointer is
+    // on the tile (or the keyboard on it); a click on it is not a run.
+    if (feature.settings && here && !arranging) {
+      const label = feature.settingsHint || feature.name + ' settings';
+      const set = el('span', 'db-tile-set');
+      set.innerHTML = PENCIL_SVG;
+      set.setAttribute('role', 'button');
+      set.tabIndex = 0;
+      set.title = label;
+      set.setAttribute('aria-label', label);
+      const open = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        feature.settings();
+      };
+      set.addEventListener('click', open);
+      set.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') open(e);
+      });
+      tile.appendChild(set);
+    }
     if (arranging) {
       // Moved, never run: dragged, or with the arrow keys.
       tile.insertBefore(el('span', 'db-grip'), tile.firstChild);
@@ -1643,7 +1813,14 @@
   }
 
   const groupOf = (f) => f.group || 'Tools';
-  const defaultGroups = () => Array.from(new Set(features.map(groupOf)));
+  /* The switches set once and left on - Open on All, Column defaults, Keep
+   * panel position... - in one section, after the tools. A switch used on
+   * demand (Expand, God mode) stays with its tools. */
+  const AUTOMATIC = 'Automatic';
+  const defaultGroups = () => {
+    const all = Array.from(new Set(features.map(groupOf)));
+    return all.filter((g) => g !== AUTOMATIC).concat(all.includes(AUTOMATIC) ? [AUTOMATIC] : []);
+  };
   const groupOrder = () => ordered(defaultGroups(), layout.groups);
   const tileOrder = () => ordered(features.map((f) => f.id), layout.tiles);
   const arranged = () => groupOrder().join('\n') !== defaultGroups().join('\n') || tileOrder().join('\n') !== features.map((f) => f.id).join('\n');
@@ -2253,11 +2430,11 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if (changes[TOUR_KEY]) {
-      tourDue = changes[TOUR_KEY].newValue || null;
+      tourDue = TOUR_ON ? changes[TOUR_KEY].newValue || null : null;
       if (!tourDue && tour) endTour();
     }
     if (changes[TOUR_NEW_KEY]) {
-      tourNew = readTourNew(changes[TOUR_NEW_KEY].newValue);
+      tourNew = TOUR_ON ? readTourNew(changes[TOUR_NEW_KEY].newValue) : new Set();
       if (refs && !tour) queueRender();
     }
   });
@@ -2332,7 +2509,17 @@
       send({ type: 'DB_SAVED', id: id, what: what || '' }).catch(() => {});
     },
     // Features check it before a chrome.* call made outside onRun / onEnable.
-    alive: () => !retired && alive()
+    alive: () => !retired && alive(),
+    // For new tools, so each does not carry its own copy (the older ones do):
+    // text on the clipboard (true when it got there; a textarea when the
+    // clipboard API will not), a message to background.js (a promise - rejects
+    // with GONE once the extension was reloaded, instead of throwing), the
+    // Dataverse Web API of this page's environment (above).
+    copyText: copyText,
+    send: send,
+    webApi: webApi,
+    // The Dynamics 365 page - { type, etn, id, viewId, viewType } - also in a multisession app.
+    page: pageHere
   });
 
   // Cut off: noticed within a second and a half, or at once when the new
@@ -2380,8 +2567,10 @@
 
   chrome.storage.local.get([STORAGE_KEY, SHOW_ALL_KEY, THEME_KEY, USE_KEY, SAVED_KEY, SAVED_SEEN_KEY, LAYOUT_KEY, NEWS_KEY, FOLDED_KEY, TOUR_KEY, TOUR_NEW_KEY], (data) => {
     Object.assign(state, (data && data[STORAGE_KEY]) || {});
-    tourDue = (data && data[TOUR_KEY]) || null;
-    tourNew = readTourNew(data && data[TOUR_NEW_KEY]);
+    tourDue = TOUR_ON ? (data && data[TOUR_KEY]) || null : null;
+    tourNew = TOUR_ON ? readTourNew(data && data[TOUR_NEW_KEY]) : new Set();
+    // Off: a tour or a NEW left from before goes.
+    if (!TOUR_ON && !inFrame && data && (data[TOUR_KEY] || data[TOUR_NEW_KEY])) store({ [TOUR_KEY]: null, [TOUR_NEW_KEY]: null });
     newsDue = (data && data[NEWS_KEY]) || null;
     markInfo();
     layouts = readLayouts(data && data[LAYOUT_KEY]);

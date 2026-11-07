@@ -274,6 +274,114 @@ async function runInEnvironment(host, func, args, opener) {
   }
 }
 
+/* User access (user-access.js): one user in an environment - found by their
+ * Entra ID object id, else their user name or email - with their roles, their
+ * teams and the teams' roles. With a change, roles are given or taken first,
+ * by name: a role is per business unit, so the one of the user's own unit.
+ * Self-contained: it runs in a tab of that environment. */
+async function userAccessHere(who, change) {
+  const API = '/api/data/v9.2/';
+  const FMT = '@OData.Community.Display.V1.FormattedValue';
+  const call = async (method, path, body) => {
+    const res = await fetch(API + path, {
+      method: method,
+      credentials: 'same-origin',
+      headers: Object.assign(
+        { Accept: 'application/json', 'OData-MaxVersion': '4.0', 'OData-Version': '4.0', Prefer: 'odata.include-annotations="' + FMT.slice(1) + '"' },
+        body ? { 'Content-Type': 'application/json' } : {}
+      ),
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (!res.ok) {
+      let m = '';
+      try {
+        m = (await res.json()).error.message;
+      } catch (e) {
+        /* no JSON */
+      }
+      throw new Error('HTTP ' + res.status + (m ? ': ' + m : ''));
+    }
+    return res.status === 204 ? null : res.json();
+  };
+  const get = (path) => call('GET', path);
+  const q = (v) => String(v).replace(/'/g, "''");
+  try {
+    const sel = '$select=systemuserid,fullname,domainname,internalemailaddress,isdisabled,accessmode,islicensed,azureactivedirectoryobjectid,_businessunitid_value,title,_parentsystemuserid_value';
+    const find = async (filter) => ((await get('systemusers?' + sel + '&$filter=' + encodeURIComponent(filter) + '&$top=1')).value || [])[0];
+    let u = null;
+    if (who.id && /^[0-9a-f-]{36}$/i.test(who.id)) u = await find('systemuserid eq ' + who.id);
+    if (!u && who.aad && /^[0-9a-f-]{36}$/i.test(who.aad)) u = await find('azureactivedirectoryobjectid eq ' + who.aad);
+    if (!u && who.domain) u = await find("domainname eq '" + q(who.domain) + "'");
+    if (!u && who.email) u = await find("internalemailaddress eq '" + q(who.email) + "'");
+    if (!u) return { missing: true };
+    const id = u.systemuserid;
+    const rolesNow = async () => (await get('systemusers(' + id + ')/systemuserroles_association?$select=name,roleid')).value || [];
+    const done = [];
+    if (change) {
+      const have = await rolesNow();
+      for (const name of change.add || []) {
+        const role = ((await get('roles?$select=roleid,name&$filter=' + encodeURIComponent("name eq '" + q(name) + "' and _businessunitid_value eq " + u._businessunitid_value) + '&$top=1')).value || [])[0];
+        if (!role) {
+          done.push({ name: name, op: 'add', status: 'missing' });
+          continue;
+        }
+        if (have.some((r) => r.roleid === role.roleid)) {
+          done.push({ name: name, op: 'add', status: 'had' });
+          continue;
+        }
+        try {
+          await call('POST', 'systemusers(' + id + ')/systemuserroles_association/$ref', { '@odata.id': location.origin + API + 'roles(' + role.roleid + ')' });
+          done.push({ name: name, op: 'add', status: 'ok' });
+        } catch (e) {
+          done.push({ name: name, op: 'add', status: 'error', error: e.message });
+        }
+      }
+      for (const name of change.remove || []) {
+        const role = have.find((r) => r.name === name);
+        if (!role) {
+          done.push({ name: name, op: 'remove', status: 'had' });
+          continue;
+        }
+        try {
+          await call('DELETE', 'systemusers(' + id + ')/systemuserroles_association(' + role.roleid + ')/$ref');
+          done.push({ name: name, op: 'remove', status: 'ok' });
+        } catch (e) {
+          done.push({ name: name, op: 'remove', status: 'error', error: e.message });
+        }
+      }
+    }
+    const [roles, teams, profiles] = await Promise.all([
+      rolesNow(),
+      get('systemusers(' + id + ')/teammembership_association?$select=name,teamid,teamtype,isdefault').then((r) => r.value || []),
+      // Field security profiles - not readable without the right: none then.
+      get('systemusers(' + id + ')/systemuserprofiles_association?$select=name').then((r) => (r.value || []).map((x) => x.name), () => null)
+    ]);
+    const teamRoles = await Promise.all(
+      teams.map((t) => get('teams(' + t.teamid + ')/teamroles_association?$select=name').then((r) => (r.value || []).map((x) => x.name), () => []))
+    );
+    return {
+      user: {
+        name: u.fullname || u.domainname || '',
+        email: u.internalemailaddress || '',
+        domain: u.domainname || '',
+        aad: u.azureactivedirectoryobjectid || '',
+        disabled: !!u.isdisabled,
+        access: u['accessmode' + FMT] || String(u.accessmode),
+        licensed: u.islicensed === true ? 'Yes' : u.islicensed === false ? 'No' : '',
+        bu: u['_businessunitid_value' + FMT] || '',
+        title: u.title || '',
+        manager: u['_parentsystemuserid_value' + FMT] || ''
+      },
+      profiles: profiles,
+      roles: roles.map((r) => r.name).sort((a, b) => a.localeCompare(b)),
+      teams: teams.map((t, i) => ({ name: t.name, type: t['teamtype' + FMT] || String(t.teamtype), isDefault: !!t.isdefault, roles: teamRoles[i] })),
+      done: done
+    };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 const listHere = (wait) =>
   window.DynaBoost && window.DynaBoost.envCompare ? window.DynaBoost.envCompare.environments(wait) : null;
 
@@ -346,6 +454,13 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   }
   if (msg.type === 'DB_ENV_REFRESH') {
     refreshEnvironments(sender.tab, String(msg.job || ''), !!msg.fresh).then(reply);
+    return true;
+  }
+  if (msg.type === 'DB_ENV_USER') {
+    const who = msg.who && typeof msg.who === 'object' ? { id: String(msg.who.id || ''), aad: String(msg.who.aad || ''), domain: String(msg.who.domain || ''), email: String(msg.who.email || '') } : {};
+    const list = (v) => (Array.isArray(v) ? v.map((x) => String(x).slice(0, 200)).slice(0, 200) : []);
+    const change = msg.change ? { add: list(msg.change.add), remove: list(msg.change.remove) } : null;
+    runInEnvironment(host, userAccessHere, [who, change], sender.tab).then(reply);
     return true;
   }
   if (msg.type === 'DB_ENV_APP_SOLUTIONS') {
@@ -679,6 +794,9 @@ const SAVED = {
   'flow-edit': 2700,
   'flow-run-export': 900,
   'flow-run-export:record': 10,
+  'flow-run-export:file': 10,
+  'flow-run-export:child': 10,
+  'flow-run-export:anonymised': 60,
   'flow-run-export:iteration': 900,
   'expand-all': 30,
   'form-dump': 900,
@@ -702,7 +820,16 @@ const SAVED = {
   'wiki-tree': 60,
   'canvas-check': 120,
   'any-table': 30,
-  'solution-pins:designer': 60
+  'solution-pins:designer': 60,
+  'record-history': 60,
+  'last-change': 30,
+  'clear-cache': 30,
+  'component-names': 10,
+  'open-objects': 3,
+  'ctrl-save': 2,
+  'panel-scroll': 2,
+  'form-dump:code': 30,
+  'form-dump:edit': 30
 };
 const SAVED_KEY = 'dynaboost.saved';
 let savedQueue = Object.create(null);
@@ -809,6 +936,37 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     );
     return true;
   }
+});
+
+// Clear cache (clear-cache.js): what the site a tab is on keeps in the browser -
+// its own address only, never cookies - then the tab reloads past the
+// browser's cache. Only DynaBoost's own sites.
+const CLEAR_SITES = /(^|\.)(dynamics\.com|visualstudio\.com)$|^(make\.powerapps\.com|make\.powerautomate\.com|dev\.azure\.com)$/i;
+const CLEAR_KINDS = { data: ['indexedDB'], local: ['localStorage'], files: ['cache', 'cacheStorage'], workers: ['serviceWorkers'] };
+
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (!msg || msg.type !== 'DB_CLEAR_SITE' || !sender.tab || sender.frameId) return;
+  let origin = '';
+  try {
+    const u = new URL(sender.url);
+    if (u.protocol === 'https:' && CLEAR_SITES.test(u.hostname)) origin = u.origin;
+  } catch (e) {
+    /* no page */
+  }
+  if (!origin) {
+    reply({ error: 'Only on a page DynaBoost works on.' });
+    return;
+  }
+  const data = {};
+  for (const kind of Array.isArray(msg.what) ? msg.what : []) for (const t of CLEAR_KINDS[kind] || []) data[t] = true;
+  const tabId = sender.tab.id;
+  (Object.keys(data).length ? chrome.browsingData.remove({ origins: [origin] }, data) : Promise.resolve())
+    .then(() => {
+      reply({ ok: true });
+      return chrome.tabs.reload(tabId, { bypassCache: true });
+    })
+    .catch((e) => reply({ error: String((e && e.message) || e) }));
+  return true;
 });
 
 // A tab opened from an impersonating tab works as the same user.

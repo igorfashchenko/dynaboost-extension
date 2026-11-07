@@ -1,7 +1,12 @@
 /* Feature: Column defaults. When the New column panel opens, sets its
  * checkboxes the way the project wants them - for now one: "Allow form fill
  * assistance" is cleared. Only in a New column panel, never when editing a
- * column; a checkbox the user clicks is left as they set it. */
+ * column; a checkbox the user clicks is left as they set it.
+ *
+ * The panel may take its own default back after the box was cleared (it
+ * draws its values again, e.g. on a new data type) while the box still shows
+ * cleared - the column is then saved with the setting on. So at Save the box
+ * is clicked twice: the panel takes again what the box shows. */
 (function () {
   const ICON =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
@@ -84,6 +89,25 @@
     if (box) handled.add(box);
   }
 
+  const SAVE = ['save', 'zapisz', 'speichern', 'enregistrer', 'guardar', 'salva', 'opslaan'];
+
+  // At Save in a New column panel: each cleared box of a rule said once more, so the panel saves what it shows.
+  function onSave(e) {
+    if (!e.isTrusted || !e.target || !e.target.closest) return;
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+    const button = e.target.closest('button, [role="button"]');
+    if (!button || !SAVE.includes(norm(button.textContent))) return;
+    const pane = button.closest(PANES);
+    if (!pane || !isNewColumnPane(pane)) return;
+    for (const box of pane.querySelectorAll(BOXES)) {
+      if (box.disabled || box.getAttribute('aria-disabled') === 'true' || isChecked(box)) continue;
+      const label = labelOf(box);
+      if (!RULES.some((r) => !r.checked && r.labels.some((l) => label === l || label.startsWith(l)))) continue;
+      box.click();
+      box.click();
+    }
+  }
+
   function schedule() {
     clearTimeout(timer);
     // After React has drawn the panel and its default values.
@@ -93,7 +117,7 @@
   DynaBoost.register({
     id: 'column-defaults',
     name: 'Column defaults',
-    group: 'Tables and columns',
+    group: 'Automatic',
     hosts: ['make.powerapps.com'],
     when: () => /\/(entities|tables)(\/|$)|\/solutions\/[^/]+/i.test(location.pathname),
     hint: 'New columns start without form fill assistance',
@@ -104,6 +128,8 @@
       observer = new MutationObserver(schedule);
       observer.observe(document.documentElement, { childList: true, subtree: true });
       document.addEventListener('click', onUserClick, true);
+      document.addEventListener('pointerdown', onSave, true);
+      document.addEventListener('keydown', onSave, true);
       schedule();
     },
     onDisable() {
@@ -111,6 +137,8 @@
       observer.disconnect();
       observer = null;
       document.removeEventListener('click', onUserClick, true);
+      document.removeEventListener('pointerdown', onSave, true);
+      document.removeEventListener('keydown', onSave, true);
       clearTimeout(timer);
     }
   });

@@ -45,20 +45,25 @@ DynaBoost – the Power Platform toolbelt for makers, consultants and developers
 Stop clicking through five screens to find out why a field is locked, what runs on save or which flow touches a table. DynaBoost adds one panel to the sites you already work in – Power Apps, Power Automate, Dynamics 365 and Azure DevOps – with tools that answer those questions in one click.
 
 HIGHLIGHTS
-• Form as JSON – everything behind a model-driven form in one tab: every tab, section and field (hidden ones too) with its values; the JavaScript libraries and handlers with their code; business rules; plug-in steps, classic workflows, cloud flows and Custom APIs that run on the table; the record's business process flow with each stage's fields; the command bar buttons with their display and enable rules. "Edit in…" opens the right editor in the right solution.
+• Form as JSON – everything behind a model-driven form in one tab: every tab, section and field (hidden ones too) with its values; the JavaScript libraries and handlers with their code; business rules; plug-in steps, classic workflows, cloud flows and Custom APIs that run on the table; the record's business process flow with each stage's fields; the command bar buttons with their display and enable rules. "Edit in…" opens the right editor in the right solution. Edit on a field changes its saved value in a small window – also a column the form does not show.
 • Edit flow – the whole cloud flow definition as JSON in a real code editor. Save runs Power Automate's own error and warning checks, refuses to overwrite a newer version, keeps a backup of every save and your last versions one click back.
 • Edit screen code – canvas app YAML with syntax colours and checks, applied back to Studio in one click (Ctrl+Z undoes it).
 • App checker report – every App checker issue of the whole app in one tab, with the formula and its problems, to copy or download.
 • Impersonate – work as any user of your environment in one tab, side by side with your own. Favorites and recent users one click away.
-• God mode – every hidden field shown, every locked field unlocked, every required field optional – on this page only.
+• God mode – every hidden field shown, every locked field unlocked, every required field optional – on until you switch it off.
 
 POWER APPS
 • Export table – any grid of the maker portal copied as Markdown or CSV, or downloaded as CSV.
 • Open on All – the Tables and Apps pages open on "All" instead of "Recommended" / "My apps".
+• Open on Objects – when switched on, a solution opens on its Objects instead of the Overview.
 • Open advanced options – the advanced options of a new or edited table or column always open.
 • Column defaults – a new column starts without form fill assistance.
+• Ctrl+S saves – when switched on, Ctrl+S presses Save in the open panel of the maker portal instead of the browser's "Save as".
+• Keep panel position – a column or table panel of the maker portal no longer jumps to its top when you come back to the tab.
 • Lowercase schema names – when switched on, the schema name of a new table, column or choice stays in lower case as you type.
+• Component names – when switched on, a tab, section or subgrid in the form designer takes its name from its label each time you type or paste it: sec_report_parameters, tab_general.
 • Open in classic, Advanced Find, System jobs – one click from where you are.
+• Clear cache – on every site DynaBoost works on: what the site you are on keeps in the browser (saved forms and data, page settings, downloaded files), cleared and the page reloaded, when a form or list still shows its old version after a change. Only that site, never cookies. You pick once what is cleared; then it is one click – the pencil on the tile changes your choice.
 • Open any table – any table of the environment as a view or a new form in the app you are in, even one the app's navigation leaves out.
 • My shortcuts – up to six shortcuts to the solutions and apps you work in, in any environment: pin a solution, an app from it, or the app you have open; a model-driven app opens in the App designer in the solution you pick.
 • Expand tree – every branch of the Studio tree view open, folded back when you are done.
@@ -71,9 +76,11 @@ POWER AUTOMATE
 DYNAMICS 365
 • Form as JSON, Impersonate, God mode – see above.
 • Edit form – the form designer, one click away.
-• Open table – the record's table in the maker portal, in your solution that holds it; in several, you pick.
+• Edit table – the record's table in the maker portal, in your solution that holds it; in several, you pick.
 • Edit view – the list's view in the view designer, one click away.
 • Logical names – the logical name under every field label, one click to copy.
+• Record history – every audited change of a record in one tab: who, when, old and new values; filter by field or person, copy or download.
+• Last change – under every field label, its last change from the old value to the new; hover for who and when, one click for the field's whole history.
 • Copy record – a new record filled with this one's values; nothing is saved until you save.
 • Open workflow – a classic workflow written out in words, and its XAML editable in drafts.
 • Edit journey – the definition of a real-time journey (Customer Insights – Journeys) as JSON, saved back in drafts.
@@ -97,6 +104,7 @@ MADE FOR EVERY DAY
 • Time saved – a small gold capsule in the panel shows how much time the tools have saved you.
 • Built-in help: every tool, where it works, its limits and shortcuts – and Report a bug or Suggest an idea in a short form, no account needed.
 • The id of the record, table, flow or solution you are on, ready to copy.
+• A short film of each release on DynaBoost's YouTube channel – from the help, and as the first card of the tour after an update.
 
 PRIVATE BY DESIGN
 • No account, no tracking, no analytics, no ads.
@@ -135,7 +143,8 @@ No.
 | Permission | Justification |
 | --- | --- |
 | `scripting` | When the toolbar icon is clicked on a supported tab that was open before the extension was installed or updated, the panel's scripts are injected into that tab so it works without a page reload. On make.powerapps.com, when the Power Automate frame showing a cloud flow (make.powerautomate.com) did not get DynaBoost's scripts from the manifest, the same scripts are injected into that frame only. "Compare" runs the same read-only script in a tab of the user's other Dynamics 365 environment - one the user has open, or one opened in the background for a moment and closed again, after asking - and in a make.powerapps.com tab to read the list of the user's environments. "Edit flow" runs a small script in a tab of the flow's own environment the same way - an open one, or one opened in the background for a moment and closed again - to read the solution flow's unpublished draft and, when the user agrees, publish it before saving. |
-| `storage` | Remembers which tools are switched on, the "show all tiles" setting, the order the user arranged the panel's sections and tiles in, light or dark mode, the host name of each Dynamics environment the user entered for "Open in classic" and "Advanced Find", backups of journey definitions saved with "Edit journey" and of flow definitions saved with "Edit flow", the user's "My shortcuts" (solutions and apps pinned in the panel), the names and addresses of the user's environments as make.powerapps.com lists them and whether to ask before opening a tab in the background (Compare), the last five users picked in "Impersonate" and up to three the user starred, for each environment (name, email, business unit - to pick them again in one click), up to five tables starred in "Open any table" and the last five opened there, for each environment (their logical names), the tiles' names, icons and panel sections for the built-in help page and the version it was last opened in (so it opens at the top once after an update) and the version DynaBoost was last updated to until "What's new" is opened (for the dot on the help button), the id of the app the user last worked in for each Dynamics 365 environment (so the record links in "Export run" open in that app), the command bar definitions of the last five tables read by "Form as JSON" (to show them at once the next time; removed after 14 days), and - for up to two minutes - which web resource or command the user chose with "Edit in…", so the maker portal tab it opens can open that item. Everything stays in the browser. |
+| `storage` | Remembers which tools are switched on, the "show all tiles" setting, the order the user arranged the panel's sections and tiles in, light or dark mode, the host name of each Dynamics environment the user entered for "Open in classic" and "Advanced Find", backups of journey definitions saved with "Edit journey" and of flow definitions saved with "Edit flow", the user's "My shortcuts" (solutions and apps pinned in the panel), the names and addresses of the user's environments as make.powerapps.com lists them and whether to ask before opening a tab in the background (Compare), the last five users picked in "Impersonate" and up to three the user starred, for each environment (name, email, business unit - to pick them again in one click), up to five tables starred in "Open any table" and the last five opened there, for each environment (their logical names), the tiles' names, icons and panel sections for the built-in help page and the version it was last opened in (so it opens at the top once after an update) and the version DynaBoost was last updated to until "What's new" is opened (for the dot on the help button), the id of the app the user last worked in for each Dynamics 365 environment (so the record links in "Export run" open in that app), what "Clear cache" clears and whether it asks first, the command bar definitions of the last five tables read by "Form as JSON" (to show them at once the next time; removed after 14 days), and - for up to two minutes - which web resource or command the user chose with "Edit in…", so the maker portal tab it opens can open that item. Everything stays in the browser. |
+| `browsingData` | "Clear cache": removes, when the user clicks it, what the site the user is on – a Dynamics 365 environment, make.powerapps.com, Power Automate or Azure DevOps – keeps in the browser – its saved data (IndexedDB), local storage, cached files and service workers – for that site's own address only, never cookies and never another site. |
 | `clipboardWrite` | The Copy buttons of the export and editor tabs put the result on the clipboard, and the copy button under "Say thanks" copies a wallet address. |
 | `clipboardRead` | The screen code editor loads canvas YAML the user copied from Power Apps Studio, when the user opens the editor or clicks Load. |
 | `offscreen` | Reading the clipboard in Manifest V3 needs an offscreen document; the page's own clipboard API is blocked by the site's permissions policy. |

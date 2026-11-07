@@ -59,7 +59,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const clean = (g) => String(g || '').replace(/[{}]/g, '').toLowerCase();
   const params = () => new URLSearchParams(location.search);
-  const onRecord = () => params().get('pagetype') === 'entityrecord' || (!!params().get('etn') && !!params().get('id'));
+  const onRecord = () => DynaBoost.page().type === 'entityrecord';
 
   function stored(key, fallback) {
     return new Promise((resolve) => {
@@ -1225,7 +1225,8 @@
   async function contextHere() {
     const fc = DynaBoost.formContext ? await DynaBoost.formContext(1500) : null;
     const q = params();
-    const entity = (fc && fc.entity) || q.get('etn');
+    const pg = DynaBoost.page();
+    const entity = (fc && fc.entity) || pg.etn;
     if (!entity) return null;
     const list = ((await stored(ENV_LIST_KEY, null)) || { list: [] }).list || [];
     const me = list.find((e) => e.host === location.hostname);
@@ -1239,7 +1240,7 @@
     return {
       entity: entity,
       entityLabel: entityLabel,
-      id: clean((fc && fc.id) || q.get('id')),
+      id: clean((fc && fc.id) || pg.id),
       formId: clean((fc && fc.formId) || q.get('formid')),
       formName: (fc && fc.formName) || null,
       recordName: (fc && fc.recordName) || null,

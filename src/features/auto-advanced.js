@@ -121,7 +121,7 @@
   DynaBoost.register({
     id: 'auto-advanced',
     name: 'Open advanced options',
-    group: 'Tables and columns',
+    group: 'Automatic',
     hosts: ['make.powerapps.com'],
     when: () => TABLE_PAGES.test(location.pathname),
     hint: 'Opens “Advanced options” in table and column panels',

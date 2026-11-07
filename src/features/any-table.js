@@ -126,7 +126,7 @@
   function openDialog() {
     if (closeDialog) return;
     DynaBoost.closePanel();
-    let mode = params().get('pagetype') === 'entityrecord' ? 'form' : 'view';
+    let mode = DynaBoost.page().type === 'entityrecord' ? 'form' : 'view';
     const overlay = document.createElement('div');
     overlay.className = 'db-overlay' + (DynaBoost.isDark() ? ' db-dark' : '');
     overlay.innerHTML =

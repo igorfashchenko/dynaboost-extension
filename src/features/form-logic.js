@@ -991,6 +991,8 @@
     '.lg-sol-alt{flex:none;padding:0 12px;font-size:12px;color:var(--dbc-fg-56637f)}' +
     '.lg-sol-alt:hover{border-color:var(--dbc-bd-e3b04b);background:var(--dbc-bg-fffaf0);color:var(--dbc-fg-10224e)}' +
     '.lg-sol:hover:enabled{border-color:var(--dbc-bd-e3b04b);background:var(--dbc-bg-fffaf0);color:var(--dbc-fg-10224e)}' +
+    // A solution's edge gold, as in My shortcuts and Edit table; the Default Solution rose; managed grey.
+    '.lg-sol,.lg-sol:hover:enabled{border-left:3px solid var(--dbc-bd-e3b04b)}.lg-sol[data-default],.lg-sol[data-default]:hover:enabled{border-left-color:var(--dbc-bd-e0445f)}.lg-sol:disabled{border-left-color:var(--dbc-bd-c6d0e4)}' +
     '.lg-sol:disabled{opacity:.55;cursor:default}' +
     '.lg-sol small{margin-left:auto;color:var(--dbc-fg-56637f);font-size:12px}' +
     '.lg-warn{margin:10px 0 0;padding:10px 12px;border-radius:8px;background:var(--dbc-bg-fff7e6);color:var(--dbc-fg-7a5410);font-size:13px}' +
@@ -999,6 +1001,7 @@
     '.lg-box.lg-codebox{width:min(1180px,calc(100% - 48px));max-width:none;height:86vh;max-height:none;padding:0;display:flex;flex-direction:column;overflow:hidden}' +
     '.lg-code-head{flex:none;display:flex;align-items:center;gap:10px;padding:12px 12px 0 20px}' +
     '.lg-code-head h3{margin:0;flex:1;min-width:0;font:600 15px ui-monospace,Consolas,monospace;overflow-wrap:anywhere}' +
+    '.lg-copy{flex:none;padding:5px 12px;font-size:13px}' +
     // The cross is drawn, not typed: a × glyph sits a little off centre in
     // most fonts. The character stays in the button for screen readers.
     '.lg-x{flex:none;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dbc-fg-56637f);font-size:0;line-height:0}' +
@@ -1206,7 +1209,7 @@
   // Where a function is defined: "MyLib.Account.onLoad" is found as onLoad in
   // "onLoad: function", "onLoad = (ctx) =>", "function onLoad(", "onLoad(ctx) {".
   function definitionRe(short) {
-    const n = short.replace(/\$/g, '\\$');
+    const n = short.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return new RegExp(
       '(^|[^\\w$])' + n + '\\s*[:=]\\s*(async\\s*)?(function\\b|\\(|[A-Za-z_$][\\w$]*\\s*=>)' +
         '|function\\s*\\*?\\s*' + n + '\\s*\\(' +
@@ -1214,11 +1217,39 @@
     );
   }
 
+  const CHECK =
+    '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px">' +
+    '<path d="m5 13 4 4L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  async function copyText(tab, text) {
+    try {
+      await tab.navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      try {
+        const doc = tab.document;
+        const ta = doc.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        doc.body.appendChild(ta);
+        ta.select();
+        const ok = doc.execCommand('copy');
+        ta.remove();
+        return ok;
+      } catch (e2) {
+        return false;
+      }
+    }
+  }
+
   /* The code of a web resource in a window over the tab, scrolled to the
-   * function. Esc, the cross or a click beside it closes it. */
+   * function, with Copy for the whole of it. Esc, the cross or a click
+   * beside it closes it. */
   async function viewCode(tab, name, fn, line) {
     const head =
       '<div class="lg-code-head"><h3>' + esc(name) + '</h3>' +
+      '<button type="button" class="lg-copy" data-copy-code hidden title="The whole code on the clipboard">Copy</button>' +
       '<button type="button" class="lg-x" data-close title="Close (Esc)" aria-label="Close">\u00d7</button></div>';
     const m = modal(tab, head + '<p class="lg-note lg-code-wait">Reading\u2026</p>', 'lg-codebox');
     let text = codeCache.get(name.toLowerCase());
@@ -1261,6 +1292,22 @@
       '<a href="' + esc(location.origin + '/WebResources/' + name) + '" target="_blank" rel="noopener">raw file</a></div>' +
       '<div class="lg-code">' + body + '</div>';
 
+    // Copy: the whole code as it is in the web resource, in one click.
+    const copyBtn = m.box.querySelector('[data-copy-code]');
+    copyBtn.hidden = false;
+    copyBtn.addEventListener('click', async () => {
+      const ok = await copyText(tab, text);
+      clearTimeout(copyBtn.__t);
+      copyBtn.classList.toggle('db-ok', ok);
+      copyBtn.classList.toggle('db-bad', !ok);
+      copyBtn.innerHTML = ok ? CHECK + 'Copied' : 'Copy failed';
+      if (ok) DynaBoost.saved('form-dump', 'code');
+      copyBtn.__t = setTimeout(() => {
+        copyBtn.classList.remove('db-ok', 'db-bad');
+        copyBtn.textContent = 'Copy';
+      }, 2000);
+    });
+
     const pane = m.box.querySelector('.lg-code');
     const goLine = (n) => {
       const el = pane.querySelector('[data-l="' + n + '"]');
@@ -1299,15 +1346,8 @@
       view = 'v2';
     }
     if (!row) return;
-    const set = (id, on) => {
-      const box = doc.getElementById(id);
-      if (box && box.checked !== on) {
-        box.checked = on;
-        doc.body.classList.toggle(id, on);
-      }
-    };
-    if (row.hasAttribute('data-off')) set('whole-entity', true);
-    if (row.hasAttribute('data-empty')) set('hide-empty', false);
+    // The columns shown and the filter (form-dump.js) let it through.
+    if (tab.__dbReveal) tab.__dbReveal(row);
     showView(view);
     row.scrollIntoView({ block: 'center' });
     row.classList.add('lg-flash');
@@ -1644,7 +1684,7 @@
   }
 
   function makerSide() {
-    if (location.hostname !== 'make.powerapps.com') return;
+    if (location.hostname !== 'make.powerapps.com' || !/\/solutions\/|\/command\/?$/.test(location.pathname.toLowerCase())) return;
     chrome.storage.local.get(OPEN_KEY, async (d) => {
       const job = d && d[OPEN_KEY];
       if (!job || Date.now() - job.at > 120000) return;

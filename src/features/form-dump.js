@@ -23,6 +23,12 @@
   const FMT = '@OData.Community.Display.V1.FormattedValue';
   const LOOKUP_ENTITY = '@Microsoft.Dynamics.CRM.lookuplogicalname';
 
+  // Download JSON: a floppy with braces in it.
+  const FLOPPY =
+    '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3.5 3.5h10l3 3v10h-13z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>' +
+    '<path d="M6.5 3.5v4h6v-4" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>' +
+    '<path d="M8.3 10.6c-.7 0-1 .3-1 1v.7c0 .5-.3.8-.7 1 .4.2.7.5.7 1v.7c0 .7.3 1 1 1M11.7 10.6c.7 0 1 .3 1 1v.7c0 .5.3.8.7 1-.4.2-.7.5-.7 1v.7c0 .7-.3 1-1 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
   // Controls that are not plain fields. Everything else - including Yes/No
   // checkboxes, whose classid we deliberately do not list - falls through to
   // 'field', and its type comes from the attribute metadata.
@@ -97,11 +103,12 @@
 
   function urlContext() {
     const p = new URLSearchParams(location.search);
-    const etn = p.get('etn');
+    const pg = DynaBoost.page();
+    const etn = pg.etn;
     if (!etn) return null;
     return {
       entity: etn,
-      id: clean(p.get('id')),
+      id: clean(pg.id),
       recordName: null,
       formId: clean(p.get('formid')),
       formName: null,
@@ -264,7 +271,7 @@
    * opens something else. */
   function recordUrl(clientUrl, etn, id) {
     const q = new URLSearchParams(location.search);
-    const pageEtn = (q.get('etn') || '').toLowerCase();
+    const pageEtn = DynaBoost.page().etn;
     const appid = etn && String(etn).toLowerCase() === pageEtn ? q.get('appid') : null;
     return clientUrl + '/main.aspx?' + (appid ? 'appid=' + appid + '&' : '') + 'pagetype=entityrecord&etn=' + etn + '&id=' + clean(id);
   }
@@ -471,7 +478,10 @@
             where[field].push({ process: p.name, stage: st.name, n: j + 1 });
             return Object.assign(base, describeField(field, meta, record, ctx));
           });
-          return { n: j + 1, name: st.id || st.name, label: st.name, entity: st.entity || null, active: !!st.active, controls: controls };
+          const out = { n: j + 1, name: st.id || st.name, label: st.name, entity: st.entity || null, active: !!st.active, controls: controls };
+          // A stage of a branch this record does not take, as its values are now.
+          if (Array.isArray(p.activePath) && p.activePath.length && st.id && p.activePath.indexOf(st.id) < 0) out.offPath = true;
+          return out;
         })
       };
     }
@@ -601,6 +611,80 @@
     });
   }
 
+  /* The business process flow's definition (form-bpf.js): its row's XAML,
+   * one request, kept per page. Never a rejection - the form does not wait
+   * on it to fail. */
+  const bpfCache = new Map();
+  function loadBpf(id) {
+    const key = clean(id);
+    if (!bpfCache.has(key)) {
+      const p = getJson('workflows(' + key + ')?$select=name,uniquename,xaml,statecode,ismanaged,modifiedon')
+        .then((row) => ({ row: row, def: DynaBoost.formBpf.read(row.xaml) }))
+        .catch((e) => {
+          bpfCache.delete(key);
+          return { error: String((e && e.message) || e).split('\n')[0] };
+        });
+      bpfCache.set(key, p);
+    }
+    return bpfCache.get(key);
+  }
+
+  /* The definition as the JSON gives it: each branch after its stage, its
+   * rules in order in words, where it goes otherwise - stages by their
+   * number on the bar ("3. Approval"), as everywhere else in the JSON. */
+  function definitionOf(got, dump, meta, lcid) {
+    if (!got) return null;
+    if (got.error) return { error: 'The process definition was not read: ' + got.error };
+    const FB = DynaBoost.formBpf;
+    const here = dump.entity.logicalName;
+    const cond = FB.words(got.def, {
+      label: (t, c) => (t === here && meta.attr[c] ? label(meta.attr[c].DisplayName, lcid) : null),
+      option: (t, c, v) => {
+        const o = t === here && meta.options[c] ? meta.options[c].options.find((x) => String(x.value) === String(v) || (x.value === 1 && v === 'true') || (x.value === 0 && v === 'false')) : null;
+        return o ? o.label : null;
+      }
+    });
+    const bar = dump.process.stages;
+    const stageText = (id) => {
+      if (!id) return null;
+      const st = bar.find((x) => clean(x.name) === id);
+      if (st) return st.n + '. ' + (st.label || st.name);
+      const x = got.def.byId[id];
+      return x ? x.stage : id;
+    };
+    const out = {
+      from: 'the process row (workflows, its XAML)',
+      branches: got.def.branches.map((b) => {
+        const o = { after: stageText(b.after) || b.afterName || null, rules: b.rules.map((r) => Object.assign(r.name ? { name: r.name } : {}, { if: cond(r.cond), then: stageText(r.to) })) };
+        if (b.otherwise) o.otherwise = stageText(b.otherwise);
+        return o;
+      })
+    };
+    // Each stage without a branch: the one after it (the process ends after the last).
+    const branched = new Set(got.def.branches.map((b) => b.after));
+    const next = got.def.stages.filter((st) => st.id && !branched.has(st.id)).map((st) => (stageText(st.id) || st.stage) + ' → ' + (st.next ? stageText(st.next) : 'end'));
+    if (next.length) out.next = next;
+    // Steps that run something - a workflow, an action - by stage.
+    const runs = [];
+    for (const st of got.def.stages) {
+      for (const sp of st.steps) {
+        const what = sp.workflowId || sp.workflowName || sp.actionId || sp.actionName || sp.processId;
+        if (what) runs.push({ stage: stageText(st.id) || st.stage, step: sp.step, runs: sp.workflowName || sp.actionName || what });
+      }
+    }
+    if (runs.length) out.stepsThatRun = runs;
+    if (got.def.unread.length) out.notUnderstood = got.def.unread;
+    if (got.row && got.row.modifiedon) out.modifiedOn = got.row.modifiedon;
+    return out;
+  }
+
+  // A branch in one line: "after 1. Qualify: if … → 3. Approval; otherwise → 4. Close".
+  function branchLine(b) {
+    const parts = b.rules.map((r, i) => (i ? 'else if ' : 'if ') + r.if + ' → ' + (r.then || '?'));
+    if (b.otherwise) parts.push('otherwise → ' + b.otherwise);
+    return (b.after ? 'after ' + b.after + ': ' : '') + parts.join('; ');
+  }
+
   const PROCESS_PLACE = { name: 'process', label: 'Process' };
 
   // The first key of the JSON: what it holds, for whoever it is passed to.
@@ -610,6 +694,7 @@
     'Below it the same in full - header, process, tabs, footer - every control with its column metadata and the record\'s value. ' +
     '"alsoInProcess" / "alsoOnForm" mark a column that is both on the form and in a stage of the business process (stages by number, "1. Identify"; ' +
     'tab › section); a process item without "alsoOnForm" is only in the process. ' +
+    'The process\'s "branches" (layout) and "definition" say where it goes after a stage and on what condition; "notOnPath" marks a stage this record does not reach as its values are now. ' +
     '"columnsNotOnForm": the record\'s other columns; "choices": the option sets; "logic": what runs on the form, when it was read.';
 
   /* The form at a glance, in the order it shows: the header, the business
@@ -659,10 +744,12 @@
             stages: p.stages.map((st) => {
               const o = { n: st.n, stage: st.label || st.name };
               if (st.active) o.active = true;
+              if (st.offPath) o.notOnPath = true;
               if (st.entity && st.entity !== dump.entity.logicalName) o.table = st.entity;
               o.items = st.controls.map(item);
               return o;
-            })
+            }),
+            ...(p.definition && p.definition.branches && p.definition.branches.length ? { branches: p.definition.branches.map(branchLine) } : {})
           }
         : null,
       tabs: dump.tabs.map((t) => {
@@ -765,6 +852,8 @@
       ? track('record', loadDef(ctx.entity).then((def) => getJson(def.EntitySetName + '(' + ctx.id + ')', ANNOTATE)), (r) => plural(Object.keys(r || {}).filter((k) => k.indexOf('@') < 0).length, 'value', 'values'))
       : Promise.resolve(null);
     if (!ctx.id && steps) steps.wait('record', 'A new record - nothing saved yet');
+    // The process's definition - its branches and their conditions - read alongside.
+    const bpfP = ctx.process && ctx.process.id ? loadBpf(ctx.process.id) : Promise.resolve(null);
     const metaP = track('meta', loadMeta(ctx.entity, ctx.lcid || 1033), (m) => plural(Object.keys(m.attr).length, 'column', 'columns') + ', ' + Object.keys(m.options).length + ' with choices');
     // A failure is met by the await below that needs it; none goes unheard.
     for (const p of [formsP, viewsP, recordP, metaP]) p.catch(() => {});
@@ -783,6 +872,7 @@
     // wait for it (see wire).
     const logic = loadLogic(ctx, meta, dump, form, forms);
     await resolveViews(dump, viewIds, viewsP);
+    if (dump.process) dump.process.definition = definitionOf(await bpfP, dump, meta, ctx.lcid || 1033);
     dump.layout = layoutOf(dump);
     return { dump: dump, logic: logic };
   }
@@ -818,17 +908,21 @@
     return v === null || v === undefined || v === '';
   }
 
-  function valueHtml(c) {
+  /* A field's value in two parts: its first line - the value - and what
+   * opens under it (a lookup's id, the options), so Edit can stand on the
+   * first line, next to the value. */
+  function valueParts(c) {
     if (c.lookup !== undefined) {
-      if (!c.lookup) return '<span class="nil">empty</span>';
-      return (
-        (c.lookup.url
-          ? '<a class="lk" href="' + esc(c.lookup.url) + '" target="_blank" rel="noopener">' + esc(c.lookup.name || c.lookup.id) + '</a>'
-          : '<span class="lk-dead">' + esc(c.lookup.name || c.lookup.id) + '</span>') +
-        ' <code class="ent">' + esc(c.lookup.entity || '?') + '</code>' +
-        (c.lookup.entity ? '<button type="button" class="mini" data-dump="' + esc(c.lookup.entity) + '|' + esc(c.lookup.id) + '">Open as JSON</button>' : '') +
-        '<div class="sub"><code>' + esc(c.lookup.id) + '</code>' + (c.lookup.note ? ' — ' + esc(c.lookup.note) : '') + '</div>'
-      );
+      if (!c.lookup) return { head: '<span class="nil">empty</span>', rest: '' };
+      return {
+        head:
+          (c.lookup.url
+            ? '<a class="lk" href="' + esc(c.lookup.url) + '" target="_blank" rel="noopener">' + esc(c.lookup.name || c.lookup.id) + '</a>'
+            : '<span class="lk-dead">' + esc(c.lookup.name || c.lookup.id) + '</span>') +
+          ' <code class="ent">' + esc(c.lookup.entity || '?') + '</code>' +
+          (c.lookup.entity ? '<button type="button" class="mini" data-dump="' + esc(c.lookup.entity) + '|' + esc(c.lookup.id) + '">Open as JSON</button>' : ''),
+        rest: '<div class="sub"><code>' + esc(c.lookup.id) + '</code>' + (c.lookup.note ? ' — ' + esc(c.lookup.note) : '') + '</div>'
+      };
     }
     if (c.choice) {
       const sel = c.choice.selected;
@@ -842,14 +936,19 @@
           return '<tr' + (on ? ' class="on"' : '') + '><td>' + esc(o.label) + '</td><td><code class="num">' + esc(o.value) + '</code></td>' + (o.state !== undefined ? '<td class="st">state ' + esc(o.state) + '</td>' : '') + '</tr>';
         })
         .join('');
-      return head + '<button type="button" class="mini" data-opts>' + c.choice.options.length + ' options</button><table class="opts" hidden>' + rows + '</table>';
+      return { head: head + '<button type="button" class="mini" data-opts>' + c.choice.options.length + ' options</button>', rest: '<table class="opts" hidden>' + rows + '</table>' };
     }
-    if (c.value === undefined) return '<span class="nil">–</span>';
-    if (isEmpty(c.value)) return '<span class="nil">empty</span>';
+    if (c.value === undefined) return { head: '<span class="nil">–</span>', rest: '' };
+    if (isEmpty(c.value)) return { head: '<span class="nil">empty</span>', rest: '' };
     if (!isEmpty(c.formatted) && String(c.formatted) !== String(c.value)) {
-      return esc(c.formatted) + '<div class="sub"><code>' + esc(c.value) + '</code></div>';
+      return { head: esc(c.formatted), rest: '<div class="sub"><code>' + esc(c.value) + '</code></div>' };
     }
-    return '<span class="txt">' + esc(c.value) + '</span>';
+    return { head: '<span class="txt">' + esc(c.value) + '</span>', rest: '' };
+  }
+
+  function valueHtml(c) {
+    const v = valueParts(c);
+    return v.head + v.rest;
   }
 
   function badges(c) {
@@ -892,6 +991,23 @@
   // Per column: the stages of the business process it is in, set by wire().
   let IN_PROCESS = Object.create(null);
 
+  // A saved record's fields get Edit (form-field-edit.js); set by wire().
+  let EDIT = null; // { primary } or null
+
+  function editHtml(c) {
+    if (!EDIT || c.kind !== 'field' || !c.field || c.field === EDIT.primary || !DynaBoost.fieldEdit) return '';
+    return '<button type="button" class="mini fe-edit" data-field-edit="' + esc(c.field) + '" title="Change the saved value in a window of its own">Edit</button>';
+  }
+
+  // A field's value cell: Edit right after the value, on its first line -
+  // what opens under the value (the options, a lookup's id) never moves it.
+  function valueCell(c) {
+    const edit = editHtml(c);
+    if (!edit) return valueHtml(c);
+    const v = valueParts(c);
+    return '<div class="val-h"><div class="val-v">' + v.head + '</div>' + edit + '</div>' + v.rest;
+  }
+
   function processIndex(dump) {
     const out = Object.create(null);
     if (!dump.process) return out;
@@ -930,7 +1046,7 @@
       ' data-s="' + esc(search) + '"' + (empty ? ' data-empty="1"' : '') + (off ? ' data-off="1"' : '') + '>' +
       '<div class="lbl">' + esc(c.label || c.displayName || c.id) + badges(c) + (tag || '') + (c.field ? markSlot(mk, c.field, c.label || c.displayName) : '') + '<div class="sub"><code>' + esc(c.field || c.id || '') + '</code></div></div>' +
       '<div class="typ">' + esc(typeText(c)) + '</div>' +
-      '<div class="val">' + (c.kind === 'field' ? valueHtml(c) : otherHtml(c)) + '</div>' +
+      '<div class="val">' + (c.kind === 'field' ? valueCell(c) : otherHtml(c)) + '</div>' +
       '</div>'
     );
   }
@@ -965,7 +1081,8 @@
     const path = p.stages
       .map(
         (s, j) =>
-          '<button type="button" class="bpf-st' + (s.active ? ' act' : '') + '" data-bpf="' + j + '" aria-pressed="false"' + (s.active ? ' title="The record\'s active stage"' : '') + '>' +
+          '<button type="button" class="bpf-st' + (s.active ? ' act' : '') + (s.offPath ? ' off' : '') + '" data-bpf="' + j + '" aria-pressed="false"' +
+          (s.active ? ' title="The record\'s active stage"' : s.offPath ? ' title="On a branch this record does not take, as its values are now"' : '') + '>' +
           '<span class="bpf-n">' + (j + 1) + '</span>' + esc(s.label || s.name) +
           (other(s) ? '<code>' + esc(s.entity) + '</code>' : '') + (s.active ? '<span class="bpf-act">active</span>' : '') +
           '<span class="bpf-c">' + s.controls.length + '</span></button>'
@@ -986,6 +1103,7 @@
       DynaBoost.formLogic.icon('bpf') + '<b>Business process</b>' + (p.name ? '<span class="bpf-name">' + esc(p.name) + '</span>' : '') +
       (p.status && p.status !== 'active' ? '<span class="bd">' + esc(p.status) + '</span>' : '') + '<span class="bpf-chev" aria-hidden="true"></span></button>' +
       '<div class="bpf-path">' + path + '</div><span class="bpf-tools" data-bpf-tools></span></div>' +
+      rulesHtml(p.definition) +
       '<div class="bpf-others" data-bpf-others></div>' +
       '<div class="bpf-body">' + stages + '</div></section>'
     );
@@ -1097,6 +1215,31 @@
     setTimeout(ask, 1500);
   }
 
+  // Under the bar: where the process branches, on what - from its definition.
+  function rulesHtml(def) {
+    if (!def) return '';
+    if (def.error) return '<div class="bpf-rules"><span class="bpf-why">' + esc(def.error) + '</span></div>';
+    // The next stage as on the bar - its number in a circle, its name - a click opens it.
+    const to = (t) => {
+      if (!t) return '<span class="bpf-arrow">→</span><span class="bpf-why">where it goes is not read yet</span>';
+      const m = String(t).match(/^(\d+)\. (.*)$/);
+      const chip = m
+        ? '<button type="button" class="bpf-go" data-bpf-go="' + (Number(m[1]) - 1) + '" title="Open this stage"><span class="bpf-n">' + m[1] + '</span>' + esc(m[2]) + '</button>'
+        : '<span class="bpf-go">' + esc(t) + '</span>';
+      return '<span class="bpf-arrow">→</span>' + chip;
+    };
+    const lines = (def.branches || []).map(
+      (b) =>
+        '<div class="bpf-rule"><span class="bpf-fork">⑂</span><div>' +
+        (b.after ? '<b>After ' + esc(b.after) + '</b>' : '<b>A branch</b>') +
+        b.rules.map((r, i) => '<div class="bpf-if">' + (i ? 'else if ' : 'if ') + esc(r.if) + ' ' + to(r.then) + '</div>').join('') +
+        (b.otherwise ? '<div class="bpf-if">otherwise ' + to(b.otherwise) + '</div>' : '') +
+        '</div></div>'
+    );
+    if (def.notUnderstood) lines.push('<div class="bpf-rule bpf-why">Parts of the definition not read yet: ' + esc(def.notUnderstood.join(', ')) + '</div>');
+    return lines.length ? '<div class="bpf-rules">' + lines.join('') + '</div>' : '';
+  }
+
   function formViewHtml(dump) {
     const parts = [];
     // The process bar first, as on the form; the header under it.
@@ -1161,7 +1304,7 @@
           (empty ? ' data-empty="1"' : '') + (off ? ' data-off="1"' : '') + '>' +
           '<div class="lbl"><code>' + esc(c.field) + '</code>' + badges(c) + bpfTag(c, dump) + markSlot(mk, c.field, c.displayName) + '<div class="sub">' + esc(c.displayName || '') + '</div></div>' +
           '<div class="typ">' + esc(typeText(c)) + '</div>' +
-          '<div class="val">' + valueHtml(c) + '</div>' +
+          '<div class="val">' + valueCell(c) + '</div>' +
           '<div class="whr">' + (where ? where.map(esc).join('<br>') : '<span class="nil">not on form</span>') + '</div>' +
           '</div>'
         );
@@ -1191,7 +1334,7 @@
         const search = [field, ch.displayName].concat(ch.options.map((o) => o.label + ' ' + o.value)).join(' ').toLowerCase();
         const picked = sel === null ? '<span class="nil">nothing picked</span>' : Array.isArray(sel) ? sel.map((s) => esc(s.label)).join(', ') : esc(sel.label) + ' <code class="num">' + esc(sel.value) + '</code>';
         return (
-          '<div class="card" data-s="' + esc(search) + '"' + (ch.onForm ? '' : ' data-off="1"') + '>' +
+          '<div class="card" data-field="' + esc(field) + '" data-s="' + esc(search) + '"' + (ch.onForm ? '' : ' data-off="1"') + '>' +
           '<h3>' + esc(ch.displayName || field) + '<code>' + esc(field) + '</code><span class="kind">' + esc(ch.kind) + '</span></h3>' +
           '<div class="picked">' + picked + (ch.onForm ? '' : ' <span class="bd">not on form</span>') + '</div>' +
           '<table class="opts open">' + rows + '</table>' +
@@ -1216,6 +1359,7 @@
     'button:hover{border-color:var(--dbc-bd-1e6bff);color:var(--dbc-fg-1e6bff)}' +
     'button.primary{background:var(--dbc-bg-1e6bff);border-color:var(--dbc-bd-1e6bff);color:var(--dbc-fg-fff);font-weight:600}' +
     'button.primary:hover{background:var(--dbc-bg-155ee0);color:var(--dbc-fg-fff)}' +
+    'button.icon{width:36px;height:36px;padding:0;display:inline-flex;align-items:center;justify-content:center}button.icon svg{width:19px;height:19px}' +
     'button.db-ok{border-color:var(--dbc-bd-1c6b32);color:var(--dbc-fg-1c6b32);background:var(--dbc-bg-e4f4e8)}' +
     'button.db-bad{border-color:var(--dbc-bd-a11a1a);color:var(--dbc-fg-a11a1a);background:var(--dbc-bg-fde8e8)}' +
     // A switch of views: hairlines between the buttons, the open one in
@@ -1243,10 +1387,32 @@
     '#v-form,#v-fields,#v-choices,#v-json,#v-scripts,#v-rules,#v-automations,#v-commands{display:none}' +
     'body.view-form #v-form,body.view-fields #v-fields,body.view-choices #v-choices,body.view-json #v-json,' +
     'body.view-scripts #v-scripts,body.view-rules #v-rules,body.view-automations #v-automations,body.view-commands #v-commands{display:block}' +
-    'body.view-scripts .bar>label,body.view-rules .bar>label,body.view-automations .bar>label,body.view-commands .bar>label,body.view-json .bar>label{opacity:.4;pointer-events:none}' +
-    '.bar>label:has(input:disabled){opacity:.4;cursor:default}' +
+    // The columns and the filter: for the Form, Fields and Choices views only.
+    'body.view-scripts .flt,body.view-rules .flt,body.view-automations .flt,body.view-commands .flt,body.view-json .fbtn,body.view-json .fchips{opacity:.4;pointer-events:none}' +
+    '.flt{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 0 12px;position:relative}' +
+    '.flt .seg{height:32px}.flt .seg button{height:30px;padding:0 11px;font-size:13px}' +
+    '.flt .seg button:disabled{opacity:.45;cursor:default;background:var(--dbc-bg-fff);color:var(--dbc-fg-10224e)}' +
+    '.flt .c{margin-left:6px;padding:0 6px;border-radius:8px;background:var(--dbc-bg-eef2f9);color:var(--dbc-fg-56637f);font-size:11px;font-weight:600}' +
+    '.flt .seg button[aria-pressed="true"] .c{background:var(--dbc-bg-fff);color:var(--dbc-fg-1e6bff)}' +
+    '.fbtn{display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;height:32px;padding:0 11px;font-size:13px}' +
+    '.fbtn svg{width:14px;height:14px}' +
+    '.fbtn.on,.fbtn[aria-expanded="true"]{border-color:var(--dbc-bd-1e6bff);background:var(--dbc-bg-e9f1ff);color:var(--dbc-fg-1e6bff)}' +
+    '.fbadge{padding:0 6px;border-radius:8px;background:var(--dbc-bg-1e6bff);color:var(--dbc-fg-fff);font-size:11px;font-weight:700;line-height:16px}' +
+    '.fchips{display:contents}' +
+    '.fchip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 6px 0 10px;border:1px solid var(--dbc-bd-e3b04b);border-radius:13px;background:var(--dbc-bg-fffaf0);color:var(--dbc-fg-10224e);font-size:12.5px}' +
+    '.fchip:hover{border-color:var(--dbc-bd-9a6a12);color:var(--dbc-fg-10224e)}' +
+    '.fchip i{font-style:normal;color:var(--dbc-fg-9a6a12);font-size:14px;line-height:1}' +
+    '.fclear{border:0;background:none;padding:0 4px;color:var(--dbc-fg-1e6bff);font-size:12.5px}.fclear:hover{text-decoration:underline}' +
+    '.fres{margin-left:auto;color:var(--dbc-fg-56637f);font-size:12.5px}' +
+    '.fpop{position:fixed;z-index:30;width:400px;max-width:calc(100vw - 24px);padding:6px 14px 12px;border:1px solid var(--dbc-bd-dde3f0);border-radius:10px;background:var(--dbc-bg-fff);box-shadow:0 12px 32px rgba(10,23,56,.18)}' +
+    '.fpop h4{margin:10px 0 6px;color:var(--dbc-fg-56637f);font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}' +
+    '.fopts{display:flex;flex-wrap:wrap;gap:6px}' +
+    '.fopt{display:inline-flex;align-items:center;height:28px;padding:0 10px;border-radius:14px;font-size:12.5px}' +
+    '.fopt .c{margin-left:6px;padding:0 6px;border-radius:8px;background:var(--dbc-bg-eef2f9);color:var(--dbc-fg-56637f);font-size:11px;font-weight:600}' +
+    '.fopt[aria-pressed="true"]{border-color:var(--dbc-bd-1e6bff);background:var(--dbc-bg-e9f1ff);color:var(--dbc-fg-1e6bff)}.fopt[aria-pressed="true"] .c{background:var(--dbc-bg-fff);color:var(--dbc-fg-1e6bff)}' +
+    '.fopt:disabled{opacity:.45;cursor:default}' +
+    '.ffoot{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid var(--dbc-bd-dde3f0);color:var(--dbc-fg-56637f);font-size:12.5px}' +
     'body:not(.view-form) nav{display:none}' +
-    'body.hide-empty [data-empty="1"]{display:none}' +
     'body:not(.whole-entity) [data-off="1"]{display:none}' +
     '.tab{margin-bottom:26px}' +
     'h2{margin:6px 0 10px;padding-bottom:6px;font-size:16px;font-weight:600;border-bottom:1px solid var(--dbc-bd-dde3f0)}' +
@@ -1293,6 +1459,15 @@
     '.bpf-sep{color:var(--dbc-fg-97a5c6)}' +
     '.bpf-n{display:inline-flex;align-items:center;justify-content:center;flex:none;width:20px;height:20px;border-radius:50%;background:var(--dbc-bg-eef2f9);color:var(--dbc-fg-56637f);font-size:11.5px;font-weight:600}' +
     '.bpf-st.act .bpf-n,.bpf-n.act{background:var(--dbc-bg-e3b04b);color:var(--dbc-fg-3a2a05)}' +
+    '.bpf-st.off{border-style:dashed;color:var(--dbc-fg-56637f)}.bpf-st.off .bpf-n{background:transparent;box-shadow:inset 0 0 0 1px var(--dbc-bd-c6d0e4)}' +
+    '.bpf-rules{margin-top:9px;padding-top:7px;border-top:1px solid var(--dbc-bd-dde3f0);font-size:13px;color:var(--dbc-fg-10224e)}' +
+    '.bpf-rule{display:flex;gap:8px;padding:2px 2px}.bpf-rule+.bpf-rule{margin-top:8px}.bpf-fork{flex:none;color:var(--dbc-fg-9a6a12);font-weight:600}' +
+    '.bpf-rule b{font-weight:600}.bpf-if{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;padding:2px 0 0 12px;line-height:1.5}' +
+    '.bpf-arrow{color:var(--dbc-fg-9a6a12);font-weight:700}' +
+    '.bpf-go{display:inline-flex;align-items:center;gap:6px;padding:1px 9px 1px 3px;border:1px solid var(--dbc-bd-e3b04b);border-radius:12px;background:var(--dbc-bg-fffaf0);color:var(--dbc-fg-10224e);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}' +
+    '.bpf-go:hover{background:var(--dbc-bg-fff3dc);border-color:var(--dbc-bd-9a6a12);color:var(--dbc-fg-10224e)}' +
+    '.bpf-go .bpf-n{width:17px;height:17px;font-size:10.5px;background:var(--dbc-bg-fff3dc);color:var(--dbc-fg-9a6a12)}' +
+    '.bpf-why{color:var(--dbc-fg-56637f);font-style:italic}' +
     '.bpf-tools{display:flex;align-items:center;gap:6px}' +
     '.bpf-tools .mini{margin-left:0}' +
     '.bpf-others{display:none;margin-top:10px;padding:6px 0 0;border-top:1px solid var(--dbc-bd-dde3f0);font-size:13px}' +
@@ -1310,6 +1485,9 @@
     '@keyframes bpf-flash{0%,30%{background:var(--dbc-bg-e9f1ff)}100%{background:transparent}}' +
     '.mini{margin-left:8px;padding:2px 8px;font-size:11.5px;border-radius:10px;color:var(--dbc-fg-56637f)}' +
     '.mini.db-ok,.mini.db-bad{padding:2px 8px}' +
+    // Edit on a field: shown on the row under the pointer, or reached with Tab.
+    '.val-h{display:flex;align-items:flex-start;gap:8px}.val-v{flex:0 1 auto;min-width:0}' +
+    '.fe-edit{flex:none;margin:1px 0 0;opacity:0;transition:opacity 120ms}.row:hover .fe-edit,.fe-edit:focus-visible{opacity:1}' +
     'table.opts{margin-top:6px;border-collapse:collapse;font-size:12.5px}' +
     'table.opts td{padding:3px 10px 3px 0;border-top:1px solid var(--dbc-bd-edf1f8);vertical-align:top}' +
     'table.opts tr.on td{font-weight:600;color:var(--dbc-fg-10224e)}table.opts tr.on td:first-child::before{content:"● ";color:var(--dbc-fg-e3b04b)}' +
@@ -1322,6 +1500,23 @@
     '#json .jc{content-visibility:auto;contain-intrinsic-block-size:auto 3625px}' +
     '.status{margin-left:8px;font-size:12.5px;color:var(--dbc-fg-56637f)}' +
     '@media (prefers-reduced-motion:no-preference){[data-opts]{transition:color 120ms}}';
+
+  /* A column's type as the filter offers it - a few groups people look for,
+   * the rest as Other. */
+  const TYPE_GROUPS = ['Text', 'Number', 'Date', 'Yes/No', 'Choice', 'Lookup', 'Other'];
+  function typeGroup(c) {
+    const t = String(c.type || '').replace(/Type$/, '');
+    if (/^(Lookup|Customer|Owner)$/.test(t) || c.targets) return 'Lookup';
+    if (t === 'Boolean' || (c.choice && c.choice.kind === 'boolean')) return 'Yes/No';
+    if (/Picklist$|^State$|^Status$/.test(t) || c.choice) return 'Choice';
+    if (/^(String|Memo)$/.test(t)) return 'Text';
+    if (/^(Integer|BigInt|Decimal|Double|Money)$/.test(t)) return 'Number';
+    if (t === 'DateTime') return 'Date';
+    return 'Other';
+  }
+
+  const FUNNEL =
+    '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 5h16l-6.2 7.4V18l-3.6 1.8v-7.4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
 
   function pageHtml(dump) {
     const title = (dump.record && dump.record.name) || dump.entity.displayName || dump.entity.logicalName;
@@ -1347,15 +1542,14 @@
       '</div>' +
       '<div id="lg-sum"><div class="lg-sum"><span class="lg-sum-h">Logic</span><span class="lg-dim">reading scripts, rules and automations…</span></div></div>' +
       '<div class="bar">' +
-      '<button class="primary" id="copy-json">Copy JSON</button>' +
-      '<button id="dl-json">Download .json</button>' +
+      '<button class="primary" id="copy-shown" title="What is shown: the fields the filter leaves, as a table - in the JSON view the JSON">Copy</button>' +
+      '<button id="copy-json" title="The whole form as JSON">Copy all</button>' +
+      '<button class="icon" id="dl-json" title="Download the whole form as a .json file" aria-label="Download JSON">' + FLOPPY + '</button>' +
       '<span class="seg" role="group" aria-label="View">' +
       '<button id="v1" data-view="v1" aria-pressed="true">Form</button>' +
       '<button id="v2" data-view="v2" aria-pressed="false">Fields</button>' +
       '<button id="v3" data-view="v3" aria-pressed="false">Choices (' + fieldCount + ')</button>' +
       '<button id="v4" data-view="v4" aria-pressed="false">JSON</button></span>' +
-      '<label><input type="checkbox" id="hide-empty"> hide empty</label>' +
-      '<label title="Fields and choices the entity has but this form does not show"><input type="checkbox" id="whole-entity"> whole entity</label>' +
       (dump.availableForms && dump.availableForms.length > 1
         ? '<select id="form-pick" title="Show a different main form">' +
           dump.availableForms
@@ -1363,8 +1557,18 @@
             .join('') +
           '</select>'
         : '') +
-      '<input type="search" id="q" placeholder="Filter by name, label or value">' +
+      '<input type="search" id="q" placeholder="Filter by name, label or value" title="/ puts the cursor here">' +
       '<span class="status" id="status"></span>' +
+      '</div>' +
+      // Which columns, and the filter: on the Form, Fields and Choices views.
+      '<div class="flt" id="flt">' +
+      '<span class="seg" role="group" aria-label="Columns">' +
+      '<button data-where="on" aria-pressed="true" title="The columns this form shows">On form<span class="c" data-wc="on"></span></button>' +
+      '<button data-where="off" aria-pressed="false" title="The table\u2019s columns this form does not show">Not on form<span class="c" data-wc="off"></span></button>' +
+      '<button data-where="all" aria-pressed="false" title="Every column of the table">All columns<span class="c" data-wc="all"></span></button></span>' +
+      '<button class="fbtn" id="fbtn" aria-expanded="false" aria-haspopup="true">' + FUNNEL + 'Filter<span class="fbadge" id="fbadge" hidden></span></button>' +
+      '<span class="fchips" id="fchips"></span>' +
+      '<span class="fres" id="fres"></span>' +
       '</div></header>' +
       '<main><nav id="nav"></nav><div id="content">' +
       '<div id="v-form"></div><div id="v-fields"></div><div id="v-choices"></div><div id="v-json"><pre id="json"></pre></div>' +
@@ -1378,6 +1582,72 @@
   const CHECK =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px">' +
     '<path d="m5 13 4 4L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  // A value as one line of text, as the row shows it.
+  function valueText(c) {
+    if (c.lookup !== undefined) return c.lookup ? (c.lookup.name || c.lookup.id) + (c.lookup.entity ? ' (' + c.lookup.entity + ')' : '') : '';
+    if (c.choice) {
+      const sel = c.choice.selected;
+      return sel === null || sel === undefined ? '' : (Array.isArray(sel) ? sel : [sel]).map((x) => x.label + ' (' + x.value + ')').join(', ');
+    }
+    if (c.value === undefined || isEmpty(c.value)) return '';
+    const v = typeof c.value === 'object' ? JSON.stringify(c.value) : String(c.value);
+    return !isEmpty(c.formatted) && String(c.formatted) !== v ? String(c.formatted) + ' (' + v + ')' : v;
+  }
+  const cellText = (t) => String(t == null ? '' : t).replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
+
+  /* What the open view shows, as text for the clipboard: Form and Fields -
+   * the rows left by the filter and the words typed, each column once, as a
+   * Markdown table (label, logical name, type, value, where it is); Choices -
+   * the fields left, each with its options; a logic view - its text as it
+   * stands. The JSON view's Copy gives the JSON (the caller). */
+  function shownText(doc, dump) {
+    const view = (/\bview-(\w+)/.exec(doc.body.className) || [])[1] || 'form';
+    const box = doc.getElementById('v-' + view);
+    if (!box) return '';
+    const shown = (el) => {
+      for (let n = el; n && n !== box; n = n.parentElement) if (n.style.display === 'none') return false;
+      return true;
+    };
+    if (view === 'form' || view === 'fields') {
+      const byField = new Map();
+      const where = new Map();
+      const put = (c, place) => {
+        if (!c.field) return;
+        if (!byField.has(c.field)) byField.set(c.field, c);
+        if (place) where.set(c.field, (where.get(c.field) || []).concat(place));
+      };
+      for (const s of dump.header) for (const c of s.controls) put(c, 'Header');
+      for (const t of dump.tabs) for (const s of t.sections) for (const c of s.controls) put(c, (t.label || t.name) + ' › ' + (s.label || s.name));
+      for (const s of dump.footer) for (const c of s.controls) put(c, 'Footer');
+      if (dump.process) for (const st of dump.process.stages) for (const c of st.controls) put(c, 'Process: ' + (st.label || st.name));
+      for (const c of dump.columnsNotOnForm || []) put(c, '');
+      const rows = [];
+      const seen = new Set();
+      box.querySelectorAll('.row[data-field]').forEach((el) => {
+        const f = el.getAttribute('data-field');
+        const c = byField.get(f);
+        if (!c || seen.has(f) || !shown(el)) return;
+        seen.add(f);
+        rows.push('| ' + [c.displayName || c.label || f, f, typeText(c), valueText(c), (where.get(f) || []).join('; ') || 'not on form'].map(cellText).join(' | ') + ' |');
+      });
+      if (!rows.length) return '';
+      return '**' + dump.entity.displayName + '** · form ' + dump.form.name + ' · ' + rows.length + ' column' + (rows.length === 1 ? '' : 's') + '\n\n| Column | Logical name | Type | Value | Where |\n|---|---|---|---|---|\n' + rows.join('\n');
+    }
+    if (view === 'choices') {
+      const parts = [];
+      box.querySelectorAll('.card[data-field]').forEach((el) => {
+        const f = el.getAttribute('data-field');
+        const ch = dump.choices[f];
+        if (!ch || !shown(el)) return;
+        const sel = ch.selected;
+        const on = (o) => !!sel && (Array.isArray(sel) ? sel.some((x) => x.value === o.value) : sel.value === o.value);
+        parts.push('**' + cellText(ch.displayName || f) + '** `' + f + '`\n' + ch.options.map((o) => '- ' + (on(o) ? '✓ ' : '') + cellText(o.label) + ' (' + o.value + ')' + (o.state !== undefined ? ' · state ' + o.state : '')).join('\n'));
+      });
+      return parts.join('\n\n');
+    }
+    return box.innerText.replace(/\n{3,}/g, '\n\n').trim();
+  }
 
   function flash(btn, text, ok) {
     if (btn.__dbTimer) clearTimeout(btn.__dbTimer);
@@ -1437,11 +1707,23 @@
     let logic = null;
     // The JSON is taken when it is asked for: the logic and cloud flows join it later.
     const toJson = () => prettyJson(dump);
+    /* The JSON view follows On form / Not on form / All columns: the form
+     * without the record's other columns; only those (with their choices);
+     * all of it. Copy all and the download always give all of it. */
+    const jsonFor = (w) => {
+      if (w === 'all') return toJson();
+      if (w === 'on') return prettyJson(Object.assign({}, dump, { columnsNotOnForm: undefined }));
+      const off = new Set(dump.columnsNotOnForm.map((c) => c.field));
+      const choices = {};
+      for (const f of Object.keys(dump.choices)) if (off.has(f)) choices[f] = dump.choices[f];
+      return prettyJson({ about: ABOUT, generatedAt: dump.generatedAt, environment: dump.environment, entity: dump.entity, record: dump.record, form: dump.form, columnsNotOnForm: dump.columnsNotOnForm, choices: choices });
+    };
     const json = toJson();
     const safeName = ((dump.record && dump.record.name) || dump.entity.logicalName).replace(/[^\p{L}\p{N}]+/gu, '_').slice(0, 60);
 
     MARKS = Object.create(null);
     IN_PROCESS = processIndex(dump);
+    EDIT = dump.record && dump.record.id ? { primary: dump.entity.primaryId } : null;
     get('nav').innerHTML = navHtml(dump);
     get('v-form').innerHTML = formViewHtml(dump);
     get('v-fields').innerHTML = fieldsViewHtml(dump);
@@ -1452,7 +1734,7 @@
      * behind it. A large JSON drawn at once held the tab for seconds. */
     let jsonDrawn = false;
     const drawJson = () => {
-      get('json').innerHTML = jsonHtml(toJson());
+      get('json').innerHTML = jsonHtml(jsonFor(where));
       jsonDrawn = true;
     };
     const jsonChanged = () => {
@@ -1470,24 +1752,223 @@
       doc.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === id)));
     };
 
-    const onForm = doc.querySelectorAll('#v-fields .row:not([data-off])').length;
-    const offForm = dump.columnsNotOnForm.length;
-    get('status').textContent = onForm + ' fields on form · ' + offForm + ' more in entity · ' + (json.length / 1024).toFixed(0) + ' KB';
+    get('status').textContent = (json.length / 1024).toFixed(0) + ' KB of JSON';
 
     get('copy-json').addEventListener('click', async (e) => {
       const btn = e.currentTarget;
       const ok = await copyInto(tab, toJson());
       flash(btn, ok ? 'Copied' : 'Copy failed — use the JSON view', ok);
     });
+    // Copy: what the view shows - the fields the filter leaves as a table, the
+    // choices with their options, the JSON, a logic view's text.
+    get('copy-shown').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const text = /\bview-json\b/.test(doc.body.className) ? jsonFor(where) : shownText(doc, dump);
+      if (!text) return flash(btn, 'Nothing shown', false);
+      const ok = await copyInto(tab, text);
+      flash(btn, ok ? 'Copied' : 'Copy failed — use the JSON view', ok);
+    });
     get('dl-json').addEventListener('click', () => download(tab, toJson(), dump.entity.logicalName + '_' + safeName + '.json'));
 
-    get('hide-empty').addEventListener('change', (e) => doc.body.classList.toggle('hide-empty', e.target.checked));
-    get('whole-entity').addEventListener('change', (e) => doc.body.classList.toggle('whole-entity', e.target.checked));
-    // Nothing more to show - a new form, no record read - and the switch says so.
-    if (!offForm && !Object.keys(dump.choices).some((f) => !dump.choices[f].onForm)) {
-      get('whole-entity').disabled = true;
-      get('whole-entity').parentNode.title = dump.record ? 'Every column of the entity is on this form' : 'No record - only the form\'s own columns are known';
+    /* Which columns, and the filter. Every column once, with what it is: its
+     * type, custom or system, required, hidden, read-only, a value or empty -
+     * and whether this form shows it. Within a group any picked option will
+     * do; across groups all must. An option's count is the columns it leaves,
+     * the other groups as picked. The filter, the columns and the words typed
+     * are one pass (apply), run by the search box's input event - so the
+     * process bar, which listens to it too, follows. */
+    const meta = metaCache.get(dump.entity.logicalName);
+    const isRequired = (c) => !!c.required || c.requiredLevel === 'ApplicationRequired' || c.requiredLevel === 'SystemRequired';
+    const facts = new Map(); // field -> { type, custom, required, hidden, readonly, empty, off }
+    const note = (c, off) => {
+      if (!c.field) return;
+      const hidden = !!c.visibility && c.visibility !== 'shown by script';
+      const was = facts.get(c.field);
+      if (was) {
+        was.hidden = was.hidden && hidden; // hidden only where every place hides it
+        was.readonly = was.readonly || !!c.disabled;
+        was.required = was.required || isRequired(c);
+        return;
+      }
+      const a = meta && meta.attr[c.field];
+      facts.set(c.field, {
+        type: typeGroup(c),
+        custom: !!(a && a.IsCustomAttribute),
+        required: isRequired(c),
+        hidden: hidden,
+        readonly: !!c.disabled,
+        empty: (c.value === undefined || isEmpty(c.value)) && !c.lookup,
+        off: off
+      });
+    };
+    eachControl(dump, (c) => c.kind === 'field' && note(c, false));
+    dump.columnsNotOnForm.forEach((c) => note(c, true));
+    Object.keys(dump.choices).forEach((f) => {
+      const ch = dump.choices[f];
+      if (!facts.has(f)) note({ field: f, type: ch.kind === 'boolean' ? 'BooleanType' : 'PicklistType', choice: ch, value: ch.selected ? 1 : null, requiredLevel: meta && meta.attr[f] && meta.attr[f].RequiredLevel ? meta.attr[f].RequiredLevel.Value : null }, !ch.onForm);
+    });
+
+    let where = 'on';
+    const picked = { type: new Set(), made: new Set(), state: new Set() };
+    const GROUPS = [
+      { key: 'type', title: 'Type', options: TYPE_GROUPS.map((t) => [t, t]), test: (f, v) => f.type === v },
+      { key: 'made', title: 'Made by', options: [['custom', 'Custom'], ['system', 'System']], test: (f, v) => (v === 'custom') === f.custom },
+      { key: 'state', title: 'State', options: [['required', 'Required'], ['hidden', 'Hidden'], ['readonly', 'Read-only'], ['value', 'Has a value'], ['empty', 'Empty']], test: (f, v) => (v === 'value' ? !f.empty : !!f[v]) }
+    ];
+    const inWhere = (f, w) => (w === 'on' ? !f.off : w === 'off' ? f.off : true);
+    const passes = (f, skip) => GROUPS.every((g) => g.key === skip || !picked[g.key].size || Array.from(picked[g.key]).some((v) => g.test(f, v)));
+    const filtering = () => GROUPS.some((g) => picked[g.key].size > 0);
+    const words = () => get('q').value.trim().toLowerCase();
+    const narrowing = () => !!words() || filtering() || where === 'off';
+    const run = () => get('q').dispatchEvent(new tab.Event('input'));
+
+    // The columns the words typed find, in any view.
+    function textHits(q) {
+      if (!q) return null;
+      const hit = new Set();
+      doc.querySelectorAll('#v-form [data-field][data-s], #v-fields [data-field][data-s], #v-choices [data-field][data-s]').forEach((el) => {
+        if ((el.getAttribute('data-s') + ' ' + (el.getAttribute('data-m') || '')).indexOf(q) >= 0) hit.add(el.getAttribute('data-field'));
+      });
+      return hit;
     }
+    function count(hits, fn) {
+      let n = 0;
+      for (const [field, f] of facts) if ((!hits || hits.has(field)) && fn(f)) n++;
+      return n;
+    }
+    const resultText = (hits) => {
+      const n = count(hits, (f) => inWhere(f, where) && passes(f));
+      const all = count(null, (f) => inWhere(f, where));
+      return filtering() || hits ? n + ' of ' + all + ' columns' : all + ' column' + (all === 1 ? '' : 's');
+    };
+    const offAny = Array.from(facts.values()).some((f) => f.off);
+    const offTitle = dump.record ? 'Every column of the table is on this form' : 'No record - only the form\u2019s own columns are known';
+
+    function apply() {
+      const q = words();
+      const hits = textHits(q);
+      const narrow = narrowing();
+      doc.body.classList.toggle('whole-entity', where !== 'on');
+      doc.querySelectorAll('[data-s]').forEach((el) => {
+        let show = !q || (el.getAttribute('data-s') + ' ' + (el.getAttribute('data-m') || '')).indexOf(q) >= 0;
+        if (show && el.closest('#v-form, #v-fields, #v-choices')) {
+          const f = facts.get(el.getAttribute('data-field') || '');
+          // Not a column (a subgrid, a web resource): there while no column filter is on.
+          show = f ? inWhere(f, where) && passes(f) : !filtering() && where !== 'off';
+        }
+        el.style.display = show ? '' : 'none';
+      });
+      // A section, then a tab, with nothing left to show gets out of the way.
+      const visible = (box) => Array.from(box.querySelectorAll('.row')).some((r) => r.style.display !== 'none');
+      doc.querySelectorAll('#v-form .sec').forEach((sec) => (sec.style.display = narrow && !visible(sec) ? 'none' : ''));
+      doc.querySelectorAll('#v-form section.tab').forEach((t) => (t.style.display = narrow && !visible(t) ? 'none' : ''));
+      doc.querySelectorAll('#v-automations .lg-sec').forEach((sec) => {
+        const any = Array.from(sec.querySelectorAll('.lg-r')).some((r) => r.style.display !== 'none');
+        sec.style.display = q && !any ? 'none' : '';
+      });
+      // The list on the left follows - once the process bar has had its say.
+      tab.setTimeout(() => {
+        doc.querySelectorAll('#nav a[href^="#"]').forEach((a) => {
+          const el = doc.getElementById(a.getAttribute('href').slice(1));
+          a.style.display = el && el.style.display === 'none' ? 'none' : '';
+        });
+      }, 0);
+      // The counts, the button, the picked ones as chips.
+      for (const w of ['on', 'off', 'all']) {
+        const b = doc.querySelector('[data-where="' + w + '"]');
+        b.querySelector('.c').textContent = count(hits, (f) => inWhere(f, w) && passes(f));
+        b.setAttribute('aria-pressed', String(w === where));
+      }
+      const offBtn = doc.querySelector('[data-where="off"]');
+      offBtn.disabled = !offAny;
+      if (!offAny) offBtn.title = offTitle;
+      const n = GROUPS.reduce((a, g) => a + picked[g.key].size, 0);
+      get('fbadge').hidden = !n;
+      get('fbadge').textContent = n;
+      get('fbtn').classList.toggle('on', n > 0);
+      get('fchips').innerHTML =
+        GROUPS.map((g) => g.options.filter(([v]) => picked[g.key].has(v)).map(([v, label]) => '<button class="fchip" data-un="' + g.key + '|' + esc(v) + '" title="Remove this filter">' + esc(label) + '<i>\u00d7</i></button>').join('')).join('') +
+        (n ? '<button class="fclear" data-fclear>Clear all</button>' : '');
+      get('fres').textContent = resultText(hits);
+      drawPop(hits);
+    }
+
+    // The filter's window: the groups, each option with its count.
+    let pop = null;
+    function drawPop(hits) {
+      if (!pop) return;
+      pop.innerHTML =
+        GROUPS.map((g) => {
+          const opts = g.options
+            .map(([v, label]) => {
+              const on = picked[g.key].has(v);
+              // A type the table has no column of is not offered at all.
+              if (g.key === 'type' && !on && !count(null, (f) => g.test(f, v))) return '';
+              const c = count(hits, (f) => inWhere(f, where) && passes(f, g.key) && g.test(f, v));
+              return '<button class="fopt" data-opt="' + g.key + '|' + esc(v) + '" aria-pressed="' + on + '"' + (!c && !on ? ' disabled' : '') + '>' + esc(label) + '<span class="c">' + c + '</span></button>';
+            })
+            .join('');
+          return '<h4>' + g.title + '</h4><div class="fopts">' + opts + '</div>';
+        }).join('') +
+        '<div class="ffoot"><button class="fclear" data-fclear' + (filtering() ? '' : ' hidden') + '>Clear all</button><span>' + esc(resultText(hits)) + '</span></div>';
+    }
+    function openPop() {
+      pop = doc.createElement('div');
+      pop.className = 'fpop';
+      pop.setAttribute('role', 'dialog');
+      pop.setAttribute('aria-label', 'Filter the columns');
+      doc.body.appendChild(pop);
+      const r = get('fbtn').getBoundingClientRect();
+      pop.style.top = Math.round(r.bottom + 6) + 'px';
+      pop.style.left = Math.round(Math.max(12, Math.min(r.left, tab.innerWidth - pop.offsetWidth - 12))) + 'px';
+      get('fbtn').setAttribute('aria-expanded', 'true');
+      drawPop(textHits(words()));
+    }
+    function closePop() {
+      if (!pop) return;
+      pop.remove();
+      pop = null;
+      get('fbtn').setAttribute('aria-expanded', 'false');
+    }
+    doc.addEventListener('click', (e) => {
+      const t = e.target;
+      if (pop && !t.closest('.fpop, #fbtn')) closePop();
+      const w = t.closest('[data-where]');
+      if (w && !w.disabled) {
+        where = w.getAttribute('data-where');
+        jsonChanged();
+        return run();
+      }
+      if (t.closest('#fbtn')) return pop ? closePop() : openPop();
+      const opt = t.closest('[data-opt], [data-un]');
+      if (opt) {
+        const [key, v] = (opt.getAttribute('data-opt') || opt.getAttribute('data-un')).split('|');
+        if (picked[key].has(v)) picked[key].delete(v);
+        else picked[key].add(v);
+        return run();
+      }
+      if (t.closest('[data-fclear]')) {
+        GROUPS.forEach((g) => picked[g.key].clear());
+        return run();
+      }
+    });
+    doc.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && pop) closePop();
+      // "/" puts the cursor in the filter, as on many sites.
+      if (e.key === '/' && !e.ctrlKey && !e.altKey && !e.metaKey && !/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '') && !(e.target && e.target.isContentEditable)) {
+        e.preventDefault();
+        get('q').focus();
+        get('q').select();
+      }
+    });
+    // From a script or a rule to its column (form-logic.js): what hides it, off.
+    tab.__dbReveal = (row) => {
+      const off = row.hasAttribute('data-off') && where === 'on';
+      if (row.style.display !== 'none' && !off) return;
+      GROUPS.forEach((g) => picked[g.key].clear());
+      if (off || where === 'off') where = 'all';
+      run();
+    };
 
     const picker = get('form-pick');
     if (picker) {
@@ -1499,22 +1980,8 @@
       });
     }
 
-    get('q').addEventListener('input', (e) => {
-      const q = e.target.value.trim().toLowerCase();
-      doc.querySelectorAll('[data-s]').forEach((el) => {
-        const hay = el.getAttribute('data-s') + ' ' + (el.getAttribute('data-m') || '');
-        el.style.display = !q || hay.indexOf(q) >= 0 ? '' : 'none';
-      });
-      // A section with nothing left to show gets out of the way.
-      doc.querySelectorAll('#v-form .sec').forEach((sec) => {
-        const any = Array.from(sec.querySelectorAll('.row')).some((r) => r.style.display !== 'none');
-        sec.style.display = q && !any ? 'none' : '';
-      });
-      doc.querySelectorAll('#v-automations .lg-sec').forEach((sec) => {
-        const any = Array.from(sec.querySelectorAll('.lg-r')).some((r) => r.style.display !== 'none');
-        sec.style.display = q && !any ? 'none' : '';
-      });
-    });
+    get('q').addEventListener('input', apply);
+    apply();
 
     // The process bar: one stage open at a time, or none.
     const card = get('bpf');
@@ -1548,8 +2015,8 @@
     if (card) {
       // While the filter has words, every stage with a match is shown, its
       // button marked; no match at all, no bar.
-      get('q').addEventListener('input', (e) => {
-        const q = e.target.value.trim();
+      get('q').addEventListener('input', () => {
+        const q = narrowing();
         card.classList.toggle('searching', !!q);
         let any = false;
         card.querySelectorAll('.sec.bpf').forEach((sec) => {
@@ -1567,6 +2034,52 @@
       e.preventDefault();
       tag.click();
     });
+
+    // A field of the form or, failing that, of the entity's other columns.
+    function controlOf(field) {
+      let hit = null;
+      eachControl(dump, (c) => {
+        if (!hit && c.kind === 'field' && c.field === field) hit = c;
+      });
+      return hit || dump.columnsNotOnForm.find((c) => c.field === field) || null;
+    }
+
+    /* A value saved in the Edit window: in the dump (every place the field
+     * is - the JSON too), in its rows and in Choices, the rows flashed. */
+    function fieldSaved(field, rec) {
+      if (tab.closed) return;
+      const meta = metaCache.get(dump.entity.logicalName);
+      if (!meta) return;
+      const fresh = describeField(field, meta, rec, Object.assign({}, ctx, { attributes: {} }));
+      const put = (c) => {
+        for (const k of ['value', 'formatted', 'lookup', 'choice', 'note']) {
+          if (k in fresh) c[k] = fresh[k];
+          else delete c[k];
+        }
+        delete c.unsavedChanges;
+      };
+      eachControl(dump, (c) => {
+        if (c.kind === 'field' && c.field === field) put(c);
+      });
+      dump.columnsNotOnForm.forEach((c) => c.field === field && put(c));
+      if (dump.choices[field] && fresh.choice) dump.choices[field].selected = fresh.choice.selected;
+      const empty = (fresh.value === undefined || isEmpty(fresh.value)) && !fresh.lookup;
+      if (facts.has(field)) facts.get(field).empty = empty;
+      doc.querySelectorAll('.row[data-field="' + field + '"]').forEach((row) => {
+        const cell = row.querySelector('.val');
+        if (cell) cell.innerHTML = valueCell(Object.assign({}, fresh, { kind: 'field', field: field }));
+        if (empty) row.setAttribute('data-empty', '1');
+        else row.removeAttribute('data-empty');
+        row.classList.remove('bpf-flash');
+        void row.offsetWidth;
+        row.classList.add('bpf-flash');
+        // Once: a view shown again later does not play it again.
+        row.addEventListener('animationend', () => row.classList.remove('bpf-flash'), { once: true });
+      });
+      if (dump.choices[field]) get('v-choices').innerHTML = choicesViewHtml(dump);
+      jsonChanged();
+      run();
+    }
 
     doc.addEventListener('click', (e) => {
       const view = e.target.closest('[data-view]');
@@ -1592,6 +2105,11 @@
         });
         return;
       }
+      const go = e.target.closest('[data-bpf-go]');
+      if (go) {
+        pickStage(Number(go.getAttribute('data-bpf-go')));
+        return;
+      }
       const more = e.target.closest('[data-bpf-more]');
       if (more) {
         const box = more.closest('.bpf-card');
@@ -1614,9 +2132,33 @@
         showStage(Number(tag.getAttribute('data-bpf')), row ? row.getAttribute('data-field') : null);
         return;
       }
+      const edit = e.target.closest('[data-field-edit]');
+      if (edit && dump.record) {
+        let field = edit.getAttribute('data-field-edit');
+        // Status is changed with its reason: Edit on it opens Status Reason.
+        if (field === 'statecode' && controlOf('statuscode')) field = 'statuscode';
+        const c = controlOf(field);
+        if (!c) return;
+        DynaBoost.fieldEdit.open(tab, {
+          entity: dump.entity.logicalName,
+          setName: dump.entity.entitySetName,
+          id: dump.record.id,
+          recordName: dump.record.name,
+          field: field,
+          displayName: c.displayName || c.label,
+          onForm: !dump.columnsNotOnForm.some((x) => x.field === field),
+          choice: c.choice || null,
+          states: dump.choices.statecode ? dump.choices.statecode.options : null,
+          onSaved: (rec) => {
+            fieldSaved(field, rec);
+            if (field === 'statuscode' && 'statecode' in rec) fieldSaved('statecode', rec);
+          }
+        });
+        return;
+      }
       const opts = e.target.closest('[data-opts]');
       if (opts) {
-        const table = opts.nextElementSibling;
+        const table = opts.closest('.val') ? opts.closest('.val').querySelector('table.opts') : opts.nextElementSibling;
         table.hidden = !table.hidden;
         return;
       }
@@ -1904,7 +2446,7 @@
     return plain({ dump: dump, logic: logic, columns: columnsOf(meta, lcid), forms: listed });
   }
 
-  DynaBoost.formDump = { read: readForCompare, label: label, css: PAGE_CSS, typeText: typeText, badges: badges, esc: esc };
+  DynaBoost.formDump = { read: readForCompare, label: label, css: PAGE_CSS, typeText: typeText, badges: badges, esc: esc, context: pageContext };
 
   // Which form is open, for the other record tiles (Edit form): the Xrm
   // snapshot when the page has one, else what the URL says.
@@ -1916,10 +2458,7 @@
     group: 'Records',
     hosts: ['dynamics.com'],
     // A record form - not a list, a dashboard or the classic designer.
-    when: () => {
-      const q = new URLSearchParams(location.search);
-      return q.get('pagetype') === 'entityrecord' || (!!q.get('etn') && !!q.get('id'));
-    },
+    when: () => DynaBoost.page().type === 'entityrecord',
     type: 'action',
     hint: 'The whole form as JSON, hidden fields too',
     icon: ICON,

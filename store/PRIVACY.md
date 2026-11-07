@@ -1,6 +1,6 @@
 # DynaBoost — Privacy Policy
 
-_Last updated: 16 October 2026_
+_Last updated: 28 October 2026_
 
 DynaBoost is a browser extension that adds productivity tools to Microsoft
 Power Apps, Power Automate, Dynamics 365 and Azure DevOps pages.
@@ -18,7 +18,13 @@ Power Apps, Power Automate, Dynamics 365 and Azure DevOps pages.
   read Dataverse or Azure DevOps records (such as a work item, or the list of
   a wiki's pages) call the same Microsoft API as the page you have open, with
   your existing session. Some tools that you start
-  yourself write back to it — for example saving a draft workflow or journey.
+  yourself write back to it — for example saving a draft workflow or journey,
+  or a field's value you change with Edit in Form as JSON.
+- **Clear cache** removes, when you click it, what the site you are on (a
+  Dynamics 365 environment, make.powerapps.com, Power Automate or Azure
+  DevOps) keeps in your browser — its saved data, page settings, cached
+  files — for that site's address only. Cookies, other sites and other
+  environments are not touched, and nothing is sent anywhere.
 - **Edit flow, Export run and your sign-in.** To read, check and save a
   Power Automate flow - and, for Export run, to read the iterations of a
   run's loops - a small helper inside the Power Automate page asks the
@@ -70,7 +76,7 @@ Power Apps, Power Automate, Dynamics 365 and Azure DevOps pages.
   definitions from before your saves - the five newest of each, removed after
   14 days, the names and addresses of your environments as make.powerapps.com
   lists them (for Compare), whether to ask before
-  opening a tab in the background, the Presenting tools' switches, keys and Spotlight size, the version the help page was last opened in, the version DynaBoost was updated to until What's new is opened (for the dot on the help button), the id of the app you last worked in, for each Dynamics 365 environment (so links to records open in that app), the command bars of the last five tables Form as JSON read (as Dynamics gave them, to show them at once next time; removed after 14 days), a count of how often the tools were used, so the
+  opening a tab in the background, the Presenting tools' switches, keys and Spotlight size, the version the help page was last opened in, the version DynaBoost was updated to until What's new is opened (for the dot on the help button), the id of the app you last worked in, for each Dynamics 365 environment (so links to records open in that app), a short note for the make.powerapps.com tab that Edit in... or Edit table opens (which web resource, command or table to show there - removed as that tab reads it, ignored after two minutes), the command bars of the last five tables Form as JSON read (as Dynamics gave them, to show them at once next time; removed after 14 days), a count of how often the tools were used, so the
   panel can suggest a rating after a while and after an update, and for the
   Time saved counter how many times each tool was used and the time that saved). You can remove them by removing
   the extension.
@@ -91,7 +97,10 @@ Power Apps, Power Automate, Dynamics 365 and Azure DevOps pages.
   the link in Stripe's receipt) and one to Stripe's Privacy Center (how Stripe handles a payer's data),
   optionally the developer's crypto wallet addresses, and a link to the
   developer's LinkedIn profile. The help page links to the same store page, to
-  DynaBoost's source code on GitHub and to the same LinkedIn profile; the other
+  DynaBoost's source code on GitHub, to the same LinkedIn profile and to
+  DynaBoost's channel on YouTube and its films (the films' pictures there, and
+  in the panel's tour after an update, are part of DynaBoost - YouTube is asked
+  for nothing until you click); the other
   tabs DynaBoost opens link to the store page. Nothing is sent when you open
   them; each page opens in a new tab only when you click
   its link, and whatever you enter there is handled by that site under its own

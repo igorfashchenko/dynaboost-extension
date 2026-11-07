@@ -472,7 +472,7 @@
   // ---------- output tab ----------
 
   function esc(s) {
-    return String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
 
   const CHECK =
@@ -1021,8 +1021,7 @@
     // The classic UI: the workflow editor itself, a solution explorer it can
     // sit in, or a workflow record - never the Unified Interface elsewhere.
     when: () => {
-      const q = new URLSearchParams(location.search);
-      return /\/sfa\/workflow\/|\/tools\/solution\//i.test(location.pathname) || (q.get('etn') || '').toLowerCase() === 'workflow' || !!scanFrames(window, 0);
+      return /\/sfa\/workflow\/|\/tools\/solution\//i.test(location.pathname) || DynaBoost.page().etn === 'workflow' || !!scanFrames(window, 0);
     },
     type: 'action',
     hint: 'The workflow’s steps and XAML in a tab',

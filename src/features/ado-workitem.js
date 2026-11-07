@@ -321,6 +321,13 @@
       if (tag === 'table') return void (out += table(n, ctx, indent));
       if (tag === 'hr') return void (out += indent + '---\n\n');
       if (tag === 'br' || tag === 'script' || tag === 'style') return;
+      // A picture standing on its own between paragraphs: inline() reads only
+      // what is inside an element, and an <img> has nothing inside.
+      if (tag === 'img') {
+        const ref = image(n, ctx);
+        if (ref) out += indent + ref + '\n\n';
+        return;
+      }
       if (tag === 'pre') {
         out += indent + '```\n' + n.textContent.replace(/\s+$/, '') + '\n' + indent + '```\n\n';
         return;

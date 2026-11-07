@@ -42,6 +42,23 @@
    * A long entry is items: a list under its version. */
   const NEWS = [
     {
+      v: '2.42',
+      items: [
+        'New: <b>Films</b> – a short film of each release on DynaBoost’s YouTube channel: under its entry here, from the YouTube button at the top of this page, and as the first card of the tour after an update.',
+        'New: <b>Record history</b> (model-driven apps) – every audited change of a record in one tab: who, when, each field’s old and new value; filtered by field, person or text; Copy or CSV.',
+        'New: <b>Last change</b> – a switch: under every field label, its last change, the old value → the new; point at it for who and when, click it for the field’s history.',
+        'New: <b>Clear cache</b> (every site – Dynamics 365, Power Apps, Power Automate, Azure DevOps) – what the site keeps in the browser cleared and the page reloaded, for a form, menu or list that still shows its old version; never cookies. Pick once what is cleared, then it is one click – the <b>pencil</b> on its tile changes your choice.',
+        'New switches for the maker portal: <b>Component names</b> – in the form designer a tab, section or subgrid takes its name from its label (sec_report_parameters); <b>Open on Objects</b> – a solution opens on Objects, not Overview; <b>Ctrl+S saves</b> – Ctrl+S presses Save in the panel you have open; <b>Keep panel position</b> – a column or table panel no longer jumps to its top when you come back to the tab.',
+        '<b>Form as JSON</b>: <b>Filter</b> – On form, Not on form or All columns, by type, custom or system, required, hidden, read-only, with a value or empty, each with how many; <b>Edit</b> on a field changes its saved value in a window of its own – a lookup lists its records as you type, Status Reason every reason under its status.',
+        '<b>Form as JSON</b>: <b>Copy</b> takes what the view shows – the columns the filter leaves as a table, the choices with their options, the JSON; <b>Copy all</b> the whole form; the disk downloads it; <kbd>/</kbd> goes to the filter. The business process shows where it branches and on what; Copy in a script’s code window takes the whole web resource.',
+        '<b>Export run</b>: <b>Files</b> – every SharePoint file the run created, changed, copied or read, a click from opening; and what else the run did – emails, approvals, child flows (a click opens their run), HTTP calls, variables, the slowest steps, who or what started it. <b>Copy without personal data</b> for a ticket.',
+        '<b>God mode</b> stays on – after a reload, on the next record, in other tabs – until you switch it off.',
+        '<b>Multisession apps</b> (Customer Service workspace and the like): the record tools work there too, on the session you are in.',
+        '<b>Edit table</b> (was Open table): the Objects tree opens down to the table.',
+        'Fixes: <b>Edit flow</b> waits for a save that takes Power Automate more than a minute; <b>Column defaults</b> keeps Allow form fill assistance cleared.'
+      ]
+    },
+    {
       v: '2.41',
       items: [
         'New: <b>App checker report</b> (canvas apps) – every App checker issue of the whole app in one tab: where it is, what App checker says and, for a formula, the formula with each problem underlined as View Problem (Alt+F8) shows it. Copy, JSON or CSV.',
@@ -98,7 +115,27 @@
   const ABOUT = {
     rate: (DynaBoost.store && DynaBoost.store.url) || 'https://chromewebstore.google.com/detail/odonlnpmplbipgojjodfpedjbbahfkmk',
     repo: 'https://github.com/igorfashchenko/dynaboost-extension',
-    linkedin: 'https://www.linkedin.com/in/igor-fashchenko/'
+    linkedin: 'https://www.linkedin.com/in/igor-fashchenko/',
+    youtube: 'https://www.youtube.com/@DynaBoostMS'
+  };
+  // A film of a release on the YouTube channel: under its What's new entry, a
+  // card with its picture (src/films/<v>.jpg - in the extension, so the help
+  // asks YouTube for nothing until the click). Its own list, not in NEWS: an
+  // entry says what changed, the film shows it.
+  const FILMS = {
+    '2.42': { id: 'YfL8spDGdVI', len: '1:32', title: 'What’s new in 2.42' },
+    '2.41': { id: 'KtrwCy1Ftyg', len: '0:58', title: 'What’s new in 2.41' },
+    '2.40': { id: 'r074PFTNObU', len: '1:05', title: 'What’s new in 2.40' },
+    '2.39': { id: 'Zxdpe7YZDsI', len: '4:41', title: 'DynaBoost in five minutes – every tool as of 2.39' }
+  };
+  const filmCard = (v) => {
+    const f = FILMS[v];
+    if (!f) return '';
+    return (
+      '<a class="film" href="https://youtu.be/' + f.id + '" target="_blank" rel="noopener noreferrer" title="Watch on YouTube">' +
+      '<span class="film-th"><img src="' + chrome.runtime.getURL('src/films/' + v + '.jpg') + '" alt="">' + PLAY + '</span>' +
+      '<span class="film-tx"><b>' + f.title + '</b><span>Film · ' + f.len + ' · YouTube</span></span></a>'
+    );
   };
   // The page the help was opened from, for Report a bug (core.js, pageKind).
   const fromPage = params.get('page') || '';
@@ -107,6 +144,9 @@
     '<path d="m12 3.8 2.5 5.1 5.6.8-4 3.9.9 5.6-5-2.6-5 2.6.9-5.6-4-3.9 5.6-.8z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
   const GITHUB =
     '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>';
+  // The play mark - one drawing for the YouTube button and the films' pictures
+  // (the panel's tour card keeps YouTube's red play, drawn in CSS): a rounded box, a triangle.
+  const PLAY = '<svg class="play" viewBox="0 0 24 24" aria-hidden="true"><rect class="pl-bg" x="2.5" y="5.5" width="19" height="13" rx="4.2"/><path class="pl-tri" d="M10.3 9.1v5.8l5-2.9z"/></svg>';
   const LINKEDIN =
     '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
     '<rect width="24" height="24" rx="4.5" fill="#0A66C2"/>' +
@@ -114,11 +154,12 @@
 
   // The tiles' names, as the panel shows them.
   const NAMES = {
-    'table-export': 'Export table', 'open-all': 'Open on All', 'auto-advanced': 'Open advanced options', 'column-defaults': 'Column defaults', 'lower-schema': 'Lowercase schema names', 'classic-open': 'Open in classic',
+    'table-export': 'Export table', 'open-all': 'Open on All', 'open-objects': 'Open on Objects', 'auto-advanced': 'Open advanced options', 'column-defaults': 'Column defaults', 'lower-schema': 'Lowercase schema names', 'ctrl-save': 'Ctrl+S saves', 'panel-scroll': 'Keep panel position', 'component-names': 'Component names', 'classic-open': 'Open in classic',
     'canvas-code': 'Edit screen code', 'canvas-check': 'App checker report', 'canvas-tree': 'Expand tree', 'flow-edit': 'Edit flow', 'flow-run-export': 'Export run',
-    'expand-all': 'Expand all steps', 'form-dump': 'Form as JSON', 'form-editor': 'Edit form', 'table-open': 'Open table', 'view-editor': 'Edit view', 'logical-names': 'Logical names',
+    'expand-all': 'Expand all steps', 'form-dump': 'Form as JSON', 'form-editor': 'Edit form', 'table-open': 'Edit table', 'view-editor': 'Edit view', 'logical-names': 'Logical names',
+    'record-history': 'Record history', 'last-change': 'Last change',
     'god-mode': 'God mode', 'copy-record': 'Copy record', impersonate: 'Impersonate', 'advanced-find': 'Advanced Find', 'any-table': 'Open any table',
-    'system-jobs': 'System jobs', workflow: 'Open workflow', journey: 'Edit journey', 'ado-workitem': 'Copy work item',
+    'system-jobs': 'System jobs', 'clear-cache': 'Clear cache', workflow: 'Open workflow', journey: 'Edit journey', 'ado-workitem': 'Copy work item',
     'ado-taskboard-expand': 'Expand items', 'wiki-expand': 'Expand wiki tree', 'wiki-tree': 'Copy wiki tree',
     'blur-data': 'Blur data', presenting: 'Presenting'
   };
@@ -176,6 +217,19 @@
           ]
         },
         {
+          id: 'clear-cache',
+          kind: 'action',
+          where: 'every site DynaBoost works on – Dynamics 365, Power Apps, Power Automate, Azure DevOps',
+          what: 'What the site you are on keeps in your browser – saved forms and data, page settings, downloaded files – cleared, and the page reloaded. For a form, menu or list that still shows the old version after a change, where Ctrl+F5 does not help.',
+          facts: [
+            'The first time a window shows each kind with what it holds now, and you pick. With <b>Next time clear at once</b> the tile then clears the same at a click – one choice for every site, kept as soon as you tick it, also when you close the window.',
+            'The <b>pencil</b> in the tile’s corner – it shows when you point at the tile – opens the window again: tick other kinds, or untick <b>Next time clear at once</b> to see the window at every click.',
+            'Only the site you are on, and never cookies. Other environments, other sites and DynaBoost’s own settings are not touched.',
+            '!make.powerapps.com and Power Automate keep their sign-in in Page settings and This tab’s memory: clearing those may sign you in again – usually by itself. Dynamics 365 and Azure DevOps keep you signed in.',
+            '!A Dynamics 365 form with unsaved changes is never cleared at once: the window opens and says so first.'
+          ]
+        },
+        {
           id: 'time-saved',
           name: 'Time saved',
           kind: 'panel',
@@ -215,6 +269,17 @@
           ]
         },
         {
+          id: 'open-objects',
+          kind: 'switch',
+          where: 'a solution',
+          what: 'A solution opens on <b>Objects</b> instead of its Overview.',
+          facts: [
+            'Once as you come into a solution: Overview picked afterwards stays, until you leave the solution and come into one again. A link straight to Objects or History is left as it is.',
+            'Clicks only the “Objects” in the solution’s own pane, next to Overview and History.',
+            '!Off by default. UI languages: EN, PL, DE, FR, ES, IT, NL – in others it does nothing.'
+          ]
+        },
+        {
           id: 'auto-advanced',
           kind: 'switch-on',
           where: 'the New / Edit table and New / Edit column panels',
@@ -226,7 +291,7 @@
           kind: 'switch-on',
           where: 'the New column panel',
           what: 'A new column starts the way your project wants it: <b>Allow form fill assistance</b> cleared.',
-          facts: ['Never in Edit column - a saved column stays as it is.', 'A checkbox you click yourself stays as you set it.', '!The checkbox is found by its English label.']
+          facts: ['Never in Edit column - a saved column stays as it is.', 'A checkbox you click yourself stays as you set it.', 'At Save the panel is made to take the box as it shows it – a cleared box is saved cleared, even if the panel took its default back meanwhile.', '!The checkbox is found by its English label.']
         },
         {
           id: 'lower-schema',
@@ -237,6 +302,39 @@
             'A schema name you type in yourself is lowered too.',
             'Never on an existing table, column or choice – its name can no longer be changed.',
             '!Off by default. UI languages: EN, PL, DE, FR, ES, IT, NL.'
+          ]
+        },
+        {
+          id: 'ctrl-save',
+          kind: 'switch',
+          where: 'make.powerapps.com',
+          what: '<b>Ctrl+S</b> presses <b>Save</b> in the panel you have open – Edit column, New table, a choice – instead of the browser’s “Save as”.',
+          facts: [
+            'While on, Ctrl+S never opens the browser’s “Save as” in the maker portal. Several panels open: the one on top is saved. No panel with a Save: nothing happens.',
+            'A Save still greyed (nothing changed yet) is not pressed – a short message says so.',
+            '!Off by default. UI languages: EN, PL, DE, FR, ES, IT, NL.'
+          ]
+        },
+        {
+          id: 'panel-scroll',
+          kind: 'switch-on',
+          where: 'make.powerapps.com',
+          what: 'A panel – New or Edit column, table, choice – stays where you were when you come back to the tab from another tab, window or app, instead of jumping to its top.',
+          facts: [
+            'As you leave, how far the panel was scrolled and the field you were in are noted; as you come back, a jump is put back for two seconds and the cursor returns to your field.',
+            'Clicking, scrolling or typing yourself ends it at once – a click in another field keeps the cursor there.'
+          ]
+        },
+        {
+          id: 'component-names',
+          kind: 'switch',
+          where: 'the form designer',
+          what: 'While on, the <b>Name</b> of a new tab, section, subgrid or other component follows its <b>Label</b> each time you type or paste it – new components and ones made before: three letters for what it is, then the label in lower case with <code>_</code> for spaces – <code>sec_report_parameters</code>, <code>tab_general</code>.',
+          facts: [
+            'Tab <code>tab</code>, section <code>sec</code>, subgrid <code>sub</code>, quick view <code>qvw</code>, web resource <code>wrs</code>, iframe <code>ifr</code>, timeline <code>tml</code>, spacer <code>spc</code>, canvas app <code>cvs</code>; a read-only or editable grid is a subgrid; any other component with a Name of its own gets three letters from the line under its pane’s title (Knowledge search: <code>kse</code>). A field keeps its column’s name.',
+            'Typing in the Name field stops it for that component until the designer is opened again or the Name is emptied. Works in the designer’s frames too.',
+            '!A component made before gets a new name too – a script that uses its old name (<code>tabs.get(…)</code>, <code>sections.get(…)</code>) must follow.',
+            '!Off by default.'
           ]
         },
         {
@@ -335,7 +433,13 @@
           where: 'a flow run',
           what: 'The whole run in one tab: trigger and every action, nested ones too, every iteration of a loop, with status, timing, inputs, outputs, errors – copy or download.',
           facts: [
-            '<b>Records</b> beside the steps: every Dataverse row the run read, created, changed or pointed at – its table, its name, the steps that touched it – one click opens it in Dynamics 365, in the app you last worked in there.',
+            'The header says how long the run took and who or what started it – a person (a button, Power Apps), a change to a row, a schedule, a parent flow (with a link to its run), an event in another service – and whether it was a test from the designer or a resubmitted run.',
+            '<b>Records</b> beside the steps: every Dataverse row the run read, created, changed or pointed at – its table, its name, the steps that touched it, the columns a create or an update set – one click opens it in Dynamics 365, in the app you last worked in there.',
+            '<b>Files</b> under them: every SharePoint file the run created, changed, copied, read or deleted – its folder, its size, the steps that touched it; the name opens the file (Word, Excel and PowerPoint in the browser), the line under it its folder. A file in a Dynamics 365 document folder puts its record in Records. OneDrive files are listed without a link – the run does not carry their address.',
+            'Under them, each part only when the run has it: <b>Emails</b> it sent – subject, to, cc, attachments; <b>Approvals</b> – the outcome, who answered and what they wrote; <b>Child flows</b> – one click opens the run of the child; <b>HTTP calls</b> – method, address, status code; <b>Variables</b> – the value each ended with (“so far” when its loop is not read to the end); <b>Slowest steps</b> – where the time went. A click on a step goes to it.',
+            'A file’s content – base64 or the bytes of a .docx or .pdf – is left out of the tab and the copies; its size stands in its place.',
+            '<b>Copy without personal data</b>: Copy everything with people’s names, emails, phone numbers and addresses, keys, passwords and signatures replaced – each person and email by one number all through (&lt;person 1&gt;, &lt;email 2&gt;) – to paste into a ticket.',
+            '!It replaces what it recognises – text a person typed into the flow can still hold a name; read it before you share it.',
             'A failed run opens with <b>Where it failed</b>: the step the failure started in – not the scopes that failed because of it – with its code, its message and the service’s own words from the response, even when Power Automate keeps them behind a link; a click goes to the step.',
             '<b>Apply to each / Do until</b>: a loop that ran more than once gets a strip of its iterations – the failed ones red and shown first (<b>Failed</b> / <b>All</b>) – and the one you pick under it; <kbd>←</kbd> <kbd>→</kbd> step through. <b>Copy iteration</b>, <b>Copy failed iterations</b>; Copy everything takes every iteration along. A loop that ran once just shows its actions.',
             'Where it failed names the iterations a step failed in – a click opens one.',
@@ -364,13 +468,17 @@
           where: 'any record form',
           what: 'Every tab, section and control of the form – hidden ones too – with the saved values.',
           facts: [
-            'Views: Form, Fields, Choices, JSON; <b>whole entity</b> adds the columns that are not on the form.',
+            'Views: Form, Fields, Choices, JSON – and, once the logic is read, Scripts, Business rules, Automations, Commands. <b>Copy</b> takes what the view shows: the columns the filter leaves as a table (label, logical name, type, value, where), the choices with their options, the JSON – which follows On form, Not on form or All columns (the filter does not apply to it); <b>Copy all</b> the whole form as JSON; the disk downloads it as a .json file. <kbd>/</kbd> puts the cursor in the filter. Under the buttons, which columns: <b>On form</b>, <b>Not on form</b> (the table’s other columns) or <b>All columns</b>, each with how many.',
+            '<b>Filter</b>: by type (Text, Number, Date, Yes/No, Choice, Lookup), <b>Custom</b> or System, and state (Required, Hidden, Read-only, Has a value, Empty) – each option with how many columns it leaves; what is picked stays in view as gold chips, × takes one off, <b>Clear all</b> every one. Pick several: any of them within a group, all groups together. With the search box too.',
+            '<b>Edit</b> on a field (it shows when you point at the row): its saved value in a window of its own – also a column the form does not show. Text, a number, a date, Yes/No, a choice or several; a lookup lists its records at once – the active ones, A to Z – narrowed as you type (or paste an id or link); <b>Status Reason</b> shows every reason under its status, and one under another status changes the status too. <b>Save</b> writes it to the record and the row shows the new value.',
+            '!Edit writes straight to the record, with your own rights; the open form shows it after a refresh. Columns nobody can write – calculated, rollup, Created On – say why.',
             'While it reads, the tab shows each step and what it found – first what the page said: the form and its business process.',
             '<b>Business process</b>: the record’s process flow as a bar at the top – a click on a stage opens its fields in place; the process icon on a field opens its stage; the filter finds them too.',
+            'Under the bar, where the process branches and on what – “after 1. Qualify: if Budget is greater than 10000 → 3. Approval; otherwise → 4. Close” – read from the process’s own definition, the next stage in gold – a click opens it; a stage this record does not reach as its values are now is dashed. In the JSON too (<code>branches</code>, <code>definition</code>), with the steps that run a workflow.',
             '<b>The JSON</b> starts with <b>layout</b> – the form at a glance, in its order: header, business process and its stages, tabs and sections, footer, each field with only what sets it apart; the full details follow. A field both on the form and in the process is marked on both sides.',
             'On the bar: <b>Edit in…</b> for the process, and the table’s other process flows.',
             'A process the page has not loaded yet (a large table can take a while): the bar waits with the seconds counting, and the form fills in with it by itself once it is there – no Read again, no reload. After 90 s it offers Read again. On a table with process flows a record whose page named none is checked for 20 s before it says “none on this record”.',
-            '<b>Logic</b>: scripts and handlers (<b>View code</b> jumps to the function), business rules, plug-in steps, workflows, cloud flows, actions, Custom APIs, and the command bars with their rules in words.',
+            '<b>Logic</b>: scripts and handlers (<b>View code</b> jumps to the function, <b>Copy</b> there takes the whole code), business rules, plug-in steps, workflows, cloud flows, actions, Custom APIs, and the command bars with their rules in words.',
             '!Handlers attached in code are found only when written plainly.',
             'Icons on a field show what fires on it; click one to open it.',
             '<b>Edit in…</b> opens the editor in a solution you pick.',
@@ -411,7 +519,8 @@
           what: 'This table in make.powerapps.com, in your solution that holds it.',
           facts: [
             'Your one unmanaged solution that holds the table – or the one pinned in My shortcuts – opens at once; otherwise a list asks which: your solutions, then the Default Solution, then the managed ones folded away.',
-            '!In the list the Default Solution is marked: a change made there is in none of your solutions, so it is not exported with them.'
+            '!In the list the Default Solution is marked: a change made there is in none of your solutions, so it is not exported with them.',
+            'In the tab, the Objects tree on the left opens down to the table – Tables unfolded, the table in view. A click of yours first leaves the tree as it is.'
           ]
         },
         {
@@ -433,12 +542,30 @@
           facts: []
         },
         {
+          id: 'record-history',
+          kind: 'action',
+          where: 'a saved record',
+          what: 'Every audited change of the record in a tab – who, when, the action, and each field’s old and new value, newest first.',
+          facts: [
+            'Filter by field, by who made the change, or by any text; Copy as Markdown or Download CSV take what is shown.',
+            'The values of a change are read as it comes into view – a long history opens at once.',
+            '!Needs auditing on for the table and the environment, and a role that may read the audit history – it says which is missing.'
+          ]
+        },
+        {
+          id: 'last-change',
+          kind: 'switch',
+          where: 'record forms',
+          what: 'Under each field’s label its last change – the old value → the new; hover for who and when, click for the field’s whole history.',
+          facts: ['Who and when show on the badge for the moment its values are still being read.', 'Follows you to the next record and is read again after a save.', '!Only what the audit holds: a field changed before auditing was turned on has no badge.']
+        },
+        {
           id: 'god-mode',
-          kind: 'page',
-          where: 'a record form',
+          kind: 'switch',
+          where: 'record forms',
           what: 'Shows hidden fields, sections and tabs, unlocks fields, makes required ones optional – and keeps it while the form’s scripts run.',
           facts: [
-            'Off, a reload or another record: the form as it was.',
+            'Stays on – a reload, another record, another tab – until you switch it off here or with the × on the gold frame; off puts the form back as it was.',
             'Saves nothing; a save still goes through the server’s rules.',
             '!Stays locked: calculated, rollup, formula and system columns, field security, read-only records – the message says which and why.'
           ]
@@ -601,6 +728,7 @@
         'No server, analytics or tracking; requests go only to the Microsoft service you have open, with your sign-in.',
         'Writes only on your click – a flow, a draft workflow or journey, code applied in Studio. Impersonate adds one header to one tab.',
         'Report a bug and Suggest an idea open a form on Tally (tally.so) – only on your click, and only what you write is sent, with the version, browser, panel section, tool and kind of page.',
+        'The films open on YouTube – only on your click; their pictures in What’s new and in the tour are part of DynaBoost, so nothing is asked of YouTube before.',
         'Stored in the browser: switch states, light / dark, the panel’s order, org addresses, My shortcuts (Chrome sync), flow and journey backups, Impersonate favorites and recent users, and a count of tools used - for the rating hint on the heart.',
         'The clipboard is read only by the screen code editor.',
         'Permissions: storage, scripting, clipboard, offscreen, declarativeNetRequestWithHostAccess (Impersonate).'
@@ -615,7 +743,7 @@
       id: 'news',
       name: 'What’s new',
       facts: NEWS.slice(0, NEWS_SHOWN).map((n) =>
-        n.items ? '<b>' + n.v + '</b><ul class="news">' + n.items.map((i) => '<li>' + i + '</li>').join('') + '</ul>' : '<b>' + n.v + '</b> – ' + n.text
+        (n.items ? '<b>' + n.v + '</b><ul class="news">' + n.items.map((i) => '<li>' + i + '</li>').join('') + '</ul>' : '<b>' + n.v + '</b> – ' + n.text) + filmCard(n.v)
       )
     }
   ];
@@ -654,6 +782,22 @@
     '@media (max-width:1180px){.about .fb{width:34px;padding:0}.about .fb span{display:none}}' +
     '.about .ico{width:34px;padding:0}' +
     '.about .ico svg{width:16px;height:16px}' +
+    // The play mark, one behaviour everywhere: its colours change, nothing
+    // bounces - an even .18 s in and out. Here: grey like its neighbours; under
+    // the pointer the button turns YouTube red, the box white, the triangle red,
+    // and one ring goes out from it.
+    '.play .pl-bg,.play .pl-tri{transition:fill .18s ease,stroke .18s ease}' +
+    '.about a.yt{position:relative;color:var(--dbc-fg-56637f)}' +
+    '.about a.yt .play{width:18px;height:18px}' +
+    '.about a.yt .pl-bg{fill:none;stroke:currentColor;stroke-width:1.7}' +
+    '.about a.yt .pl-tri{fill:currentColor}' +
+    // filled by a shadow: the header's ground is drawn over a background here
+    '.about a.yt:hover{border-color:rgb(255,0,0);color:rgb(255,0,0);box-shadow:inset 0 0 0 20px rgb(255,0,0),0 3px 10px rgba(255,0,0,.3)}' +
+    '.about a.yt:hover .pl-bg{fill:rgb(255,255,255);stroke:rgb(255,255,255)}' +
+    '.about a.yt::after{content:"";position:absolute;inset:-1px;border-radius:50%;border:2px solid rgb(255,0,0);opacity:0;pointer-events:none}' +
+    '.about a.yt:hover::after{animation:db-yt-ring .6s ease-out 1}' +
+    '@keyframes db-yt-ring{0%{opacity:.7;transform:scale(1)}100%{opacity:0;transform:scale(1.4)}}' +
+    '@media (prefers-reduced-motion:reduce){.about a.yt:hover::after{animation:none}.play .pl-bg,.play .pl-tri{transition:none}}' +
     // Time saved: the panel's gold capsule, framed like Rate DynaBoost. The
     // links and the capsule share one scale: 34 px high, 13 px text, 16 px
     // icons, 14 px from the ends.
@@ -721,6 +865,19 @@
     'ul.facts li.lim::marker{color:var(--dbc-fg-e3b04b)}' +
     'ul.news{margin:6px 0 12px;padding-left:18px}' +
     'ul.news li{margin:5px 0}' +
+    // A release's film: its picture with a play badge, its name and length; red under the pointer.
+    'a.film{display:flex;align-items:center;gap:14px;max-width:470px;margin:4px 0 14px;padding:7px 14px 7px 7px;border:1px solid var(--dbc-bd-dde3f0);border-radius:12px;background:var(--dbc-bg-fff);color:var(--dbc-fg-10224e);text-decoration:none;transition:border-color .18s ease,box-shadow .18s ease}' +
+    'a.film:hover{border-color:rgb(255,0,0);box-shadow:0 4px 14px rgba(255,0,0,.12)}' +
+    '.film-th{position:relative;flex:none;width:128px;height:72px;border-radius:8px;overflow:hidden;background:var(--dbc-bg-10224e)}' +
+    '.film-th img{display:block;width:100%;height:100%}' +
+    // the picture's play mark: dark at rest, YouTube red under the pointer
+    '.film-th .play{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px}' +
+    '.film-th .pl-bg{fill:rgba(15,15,15,.78)}' +
+    '.film-th .pl-tri{fill:rgb(255,255,255)}' +
+    'a.film:hover .film-th .pl-bg{fill:rgb(255,0,0)}' +
+    '.film-tx b{display:block;font-size:14px}' +
+    '.film-tx span{display:block;margin-top:3px;font-size:12.5px;color:var(--dbc-fg-56637f)}' +
+    'html.db-dark a.film:hover{box-shadow:0 4px 14px rgba(255,60,60,.18)}' +
     'kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--dbc-bd-c6d0e4);border-bottom-width:2px;border-radius:4px;background:var(--dbc-bg-f1f3f8);font:600 11.5px/18px "Segoe UI",system-ui,sans-serif;text-align:center;color:var(--dbc-fg-10224e)}' +
     'code{font:12.5px ui-monospace,Consolas,monospace}' +
     '.empty{padding:26px 4px;color:var(--dbc-fg-56637f)}' +
@@ -809,6 +966,7 @@
       fb('bug', 'fb-bug', DynaBoost.icons.bug, 'Report a bug') +
       fb('idea', 'fb-idea', DynaBoost.icons.idea, 'Suggest an idea') +
       '<a class="db-rate" href="' + ABOUT.rate + '" target="_blank" rel="noopener noreferrer">' + STAR + '<span>Rate DynaBoost</span></a>' +
+      '<a class="ico yt" href="' + ABOUT.youtube + '" target="_blank" rel="noopener noreferrer" title="DynaBoost on YouTube – the films" aria-label="DynaBoost on YouTube">' + PLAY + '</a>' +
       '<a class="ico" href="' + ABOUT.repo + '" target="_blank" rel="noopener noreferrer" title="DynaBoost on GitHub" aria-label="DynaBoost on GitHub">' + GITHUB + '</a>' +
       '<a class="ico" href="' + ABOUT.linkedin + '" target="_blank" rel="noopener noreferrer" title="The author on LinkedIn" aria-label="The author on LinkedIn">' + LINKEDIN + '</a>' +
       '<span id="saved"></span>' +

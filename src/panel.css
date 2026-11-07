@@ -2556,6 +2556,172 @@
   cursor: default;
 }
 
+/* ---------- Clear cache ----------
+   One row per kind of what the environment keeps: its box, its name and the
+   browser's name for it, what it holds now (gold), what it is under it. */
+
+.db-dialog.db-cc {
+  max-width: 560px;
+  max-height: 88%;
+}
+
+.db-cc-where {
+  font-size: 13.5px;
+  color: #56637f;
+}
+
+.db-cc-where b {
+  font-weight: 600;
+  color: #10224e;
+}
+
+.db-cc-warn {
+  padding: 8px 12px;
+  border-left: 3px solid #c42b1c;
+  border-radius: 6px;
+  background: #fde8e8;
+  color: #a11a1a;
+  font-size: 13px;
+}
+
+.db-cc-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #dde3f0;
+  border-radius: 8px;
+}
+
+.db-cc-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  border-top: 1px solid #edf1f8;
+  cursor: pointer;
+}
+
+.db-cc-row:first-child {
+  border-top: 0;
+}
+
+.db-cc-row:hover {
+  background: #f5f8ff;
+}
+
+.db-cc-row input,
+.db-cc-once input {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin: 2px 0 0;
+  accent-color: #1e6bff;
+  cursor: pointer;
+}
+
+.db-cc-t {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.db-cc-name {
+  font-size: 14px;
+}
+
+.db-cc-name b {
+  font-weight: 600;
+}
+
+.db-cc-name code {
+  font: 12px ui-monospace, Consolas, monospace;
+  color: #56637f;
+}
+
+.db-cc-n {
+  margin-left: 6px;
+  font-size: 12px;
+  color: #9a6a12;
+}
+
+.db-cc-n:not(:empty)::before {
+  content: "\00b7  ";
+  color: #97a5c6;
+}
+
+.db-cc-w {
+  font-size: 12.5px;
+  color: #56637f;
+}
+
+.db-cc-keep {
+  font-size: 12.5px;
+  color: #56637f;
+}
+
+.db-cc-keep b {
+  font-weight: 600;
+  color: #1c6b32;
+}
+
+.db-cc-once {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: #10224e;
+  cursor: pointer;
+}
+
+.db-overlay.db-dark .db-cc-where,
+.db-overlay.db-dark .db-cc-w,
+.db-overlay.db-dark .db-cc-keep,
+.db-overlay.db-dark .db-cc-name code {
+  color: #9aa8c7;
+}
+
+.db-overlay.db-dark .db-cc-where b,
+.db-overlay.db-dark .db-cc-once {
+  color: #e3e9f7;
+}
+
+.db-overlay.db-dark .db-cc-warn {
+  border-left-color: #ff7b7b;
+  background: #3a1616;
+  color: #ff7b7b;
+}
+
+.db-overlay.db-dark .db-cc-list {
+  border-color: #26324f;
+}
+
+.db-overlay.db-dark .db-cc-row {
+  border-top-color: #1d2742;
+}
+
+.db-overlay.db-dark .db-cc-row:hover {
+  background: #17213a;
+}
+
+.db-overlay.db-dark .db-cc-row input,
+.db-overlay.db-dark .db-cc-once input {
+  accent-color: #4d8dff;
+}
+
+.db-overlay.db-dark .db-cc-n {
+  color: #e3b04b;
+}
+
+.db-overlay.db-dark .db-cc-n:not(:empty)::before {
+  color: #5d6b8c;
+}
+
+.db-overlay.db-dark .db-cc-keep b {
+  color: #4cc27a;
+}
+
 /* ---------- Edit form / Open table: pick a solution ----------
    A row per solution it is in: name, kind and version, the arrow it opens
    with; the managed ones folded under a line of their own. */
@@ -2564,7 +2730,8 @@
   width: 480px;
   max-width: calc(100% - 32px);
   max-height: 80%;
-  overflow: auto;
+  /* Down only: the gold mark in the corner reaches past the edge on purpose. */
+  overflow: hidden auto;
   font-size: 13.5px;
 }
 
@@ -2597,6 +2764,9 @@
 
 .db-sp-row {
   position: relative;
+  /* Over the page, outside #dynaboost-root: its width takes in the padding
+     and edges, or the list scrolls sideways. */
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -2604,7 +2774,8 @@
   width: 100%;
   padding: 8px 30px 8px 11px;
   border: 1px solid #dde3f0;
-  border-left: 3px solid #1e6bff;
+  /* A solution's edge is gold, as in My shortcuts (an app's is blue there). */
+  border-left: 3px solid #e3b04b;
   border-radius: 7px;
   background: #fff;
   color: #10224e;
@@ -2616,16 +2787,25 @@
 .db-sp-row:hover,
 .db-sp-row:focus-visible {
   border-color: #1e6bff;
+  border-left-color: #e3b04b;
   background: #f5f7fc;
   outline: none;
 }
 
-.db-sp-row.db-sp-default {
-  border-left-color: #e3b04b;
+/* The Default Solution in rose - opened only after a warning. */
+.db-sp-row.db-sp-default,
+.db-sp-row.db-sp-default:hover,
+.db-sp-row.db-sp-default:focus-visible {
+  border-left-color: #e0445f;
+}
+
+.db-sp-row.db-sp-managed,
+.db-sp-row.db-sp-managed:hover,
+.db-sp-row.db-sp-managed:focus-visible {
+  border-left-color: #c6d0e4;
 }
 
 .db-sp-row.db-sp-managed {
-  border-left-color: #c6d0e4;
   color: #56637f;
 }
 
@@ -2690,7 +2870,7 @@
 
 .db-overlay.db-dark .db-sp-row {
   border-color: #26324f;
-  border-left-color: #4d8dff;
+  border-left-color: #e3b04b;
   background: #18223d;
   color: #e3e9f7;
 }
@@ -2698,14 +2878,19 @@
 .db-overlay.db-dark .db-sp-row:hover,
 .db-overlay.db-dark .db-sp-row:focus-visible {
   border-color: #4d8dff;
+  border-left-color: #e3b04b;
   background: #1e2a4a;
 }
 
-.db-overlay.db-dark .db-sp-row.db-sp-default {
-  border-left-color: #e3b04b;
+.db-overlay.db-dark .db-sp-row.db-sp-default,
+.db-overlay.db-dark .db-sp-row.db-sp-default:hover,
+.db-overlay.db-dark .db-sp-row.db-sp-default:focus-visible {
+  border-left-color: #ff6b84;
 }
 
-.db-overlay.db-dark .db-sp-row.db-sp-managed {
+.db-overlay.db-dark .db-sp-row.db-sp-managed,
+.db-overlay.db-dark .db-sp-row.db-sp-managed:hover,
+.db-overlay.db-dark .db-sp-row.db-sp-managed:focus-visible {
   border-left-color: #3a4a72;
 }
 
@@ -3700,6 +3885,44 @@
   visibility: visible;
 }
 
+/* Access: to User access - on the marked row and on the current user. */
+.db-imp-acc {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid #c6d0e4;
+  border-radius: 10px;
+  background: transparent;
+  color: #56637f;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.db-imp-on .db-imp-acc,
+.db-imp-now .db-imp-acc,
+.db-imp-acc:focus-visible {
+  visibility: visible;
+}
+
+.db-imp-acc:hover,
+.db-imp-acc:focus-visible {
+  border-color: #1e6bff;
+  color: #1e6bff;
+  outline: none;
+}
+
+.db-overlay.db-dark .db-imp-acc {
+  border-color: #34436a;
+  color: #9aa8c7;
+}
+
+.db-overlay.db-dark .db-imp-acc:hover,
+.db-overlay.db-dark .db-imp-acc:focus-visible {
+  border-color: #4d8dff;
+  color: #6aa2ff;
+}
+
 /* The star shows on the marked row, on the current user and once lit. */
 .db-imp-star {
   flex: none;
@@ -4231,6 +4454,12 @@
   --db-tour-more-line: #e8d3a3;
   --db-tour-more-chip: #ffffff;
   --db-tour-more-ink: #10224e;
+  /* the film card: a picture of the film, dark blue in both modes, YouTube's red play */
+  --db-tour-film-a: #1f56b0;
+  --db-tour-film-b: #06183f;
+  --db-tour-film-ink: #ffffff;
+  --db-tour-film-gold: #f2b32c;
+  --db-tour-film-red: #ff0000;
 }
 
 #dynaboost-root.db-dark {
@@ -4247,6 +4476,11 @@
   --db-tour-more-line: #35477a;
   --db-tour-more-chip: #1a2c5c;
   --db-tour-more-ink: #cddaf6;
+  --db-tour-film-a: #1f56b0;
+  --db-tour-film-b: #06183f;
+  --db-tour-film-ink: #ffffff;
+  --db-tour-film-gold: #f2b32c;
+  --db-tour-film-red: #ff0000;
 }
 
 .db-panel.db-touring {
@@ -4273,6 +4507,42 @@
   box-shadow: 0 0 0 2px var(--db-gold), 0 0 0 6px rgba(227, 176, 75, 0.22);
   outline: 1.5px dashed var(--db-gold);
   outline-offset: 5px;
+}
+
+/* A tool's settings: the pencil in the tile's corner - where a switch has its
+   switch - hidden until the pointer (or the keyboard) is on the tile. */
+.db-tile-set {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--db-ink-soft);
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.db-tile-set svg {
+  width: 14px;
+  height: 14px;
+}
+
+.db-tile:hover .db-tile-set,
+.db-tile:focus-visible .db-tile-set,
+.db-tile-set:focus-visible {
+  opacity: 1;
+}
+
+.db-tile-set:hover,
+.db-tile-set:focus-visible {
+  background: var(--db-blue-tint);
+  color: var(--db-blue);
+  box-shadow: inset 0 0 0 1px var(--db-blue);
+  outline: none;
 }
 
 .db-tile-new {
@@ -4511,4 +4781,137 @@
   border-color: var(--db-gold);
   background: rgba(227, 176, 75, 0.16);
   color: var(--db-tour-ink);
+}
+
+/* The tour's first card after an update: the release's film on YouTube - a
+   picture of it drawn here (no image, nothing asked of YouTube until the
+   click), Tour -> goes on to the tiles. No tile, so no arrow. */
+.db-tour-tip.db-tour-tip-film::after {
+  display: none;
+}
+
+#dynaboost-root .db-tour-film {
+  position: relative;
+  display: block;
+  margin: 2px 0 10px;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  background: radial-gradient(ellipse 120% 110% at 28% 40%, var(--db-tour-film-a) 0%, var(--db-tour-film-b) 100%);
+  color: var(--db-tour-film-ink);
+  text-decoration: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.db-tour-film-l {
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.db-tour-film-n {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.db-tour-film-n img {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+}
+
+.db-tour-film-k {
+  margin-top: 14px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--db-tour-film-gold);
+}
+
+.db-tour-film-v {
+  font-size: 46px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -1.5px;
+  color: var(--db-tour-film-gold);
+}
+
+.db-tour-film-play {
+  position: absolute;
+  right: 26px;
+  top: 50%;
+  width: 58px;
+  height: 40px;
+  margin-top: -20px;
+  border-radius: 12px;
+  background: var(--db-tour-film-red);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  transition: box-shadow 0.18s ease;
+}
+
+.db-tour-film-play::after {
+  content: '';
+  position: absolute;
+  left: 23px;
+  top: 11px;
+  border-left: 15px solid var(--db-tour-film-ink);
+  border-top: 9px solid transparent;
+  border-bottom: 9px solid transparent;
+}
+
+/* YouTube's red play, as a film's picture has it; under the pointer a soft red
+   glow comes round it - nothing grows or moves */
+#dynaboost-root .db-tour-film:hover .db-tour-film-play {
+  box-shadow: 0 0 0 6px rgba(255, 0, 0, 0.22), 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+#dynaboost-root .db-tour-film:focus-visible {
+  outline: 2px solid var(--db-gold);
+  outline-offset: 2px;
+}
+
+.db-tour-film em {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.72);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 17px;
+}
+
+.db-tour-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 2px;
+  font-size: 11.5px;
+  color: var(--db-tour-soft);
+}
+
+.db-tour-note i {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border: 1.4px solid currentColor;
+  border-radius: 50%;
+  font: italic 700 9.5px/1 Georgia, serif;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-tour-film-play {
+    transition: none;
+  }
 }
