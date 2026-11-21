@@ -1,6 +1,6 @@
 # DynaBoost — Privacy Policy
 
-_Last updated: 28 October 2026_
+_Last updated: 21 November 2026_
 
 DynaBoost is a browser extension that adds productivity tools to Microsoft
 Power Apps, Power Automate, Dynamics 365 and Azure DevOps pages.
@@ -19,7 +19,9 @@ Power Apps, Power Automate, Dynamics 365 and Azure DevOps pages.
   a wiki's pages) call the same Microsoft API as the page you have open, with
   your existing session. Some tools that you start
   yourself write back to it — for example saving a draft workflow or journey,
-  or a field's value you change with Edit in Form as JSON.
+  or a field's value you change with Edit in Form as JSON, or the columns of
+  views you copy with Copy view columns, or the plug-in trace log setting
+  you change in Plugin traces.
 - **Clear cache** removes, when you click it, what the site you are on (a
   Dynamics 365 environment, make.powerapps.com, Power Automate or Azure
   DevOps) keeps in your browser — its saved data, page settings, cached
@@ -36,7 +38,11 @@ Power Apps, Power Automate, Dynamics 365 and Azure DevOps pages.
   Dataverse: to see it and, when you agree, publish it before a save,
   DynaBoost asks that environment in a tab of it, with your own sign-in - a
   tab you have open, or one it opens in the background for a moment and
-  closes again - and only for that flow.
+  closes again - and only for that flow. Copy view columns, started from
+  make.powerapps.com, reads a table's views and saves the ones you change
+  in a tab of that environment with your own sign-in: one it opens in the
+  background, after asking you unless you chose "Don't ask again", and
+  closes as soon as it is done.
 - **Impersonate.** When you choose to work as another user of your
   Dynamics 365 environment in one tab, DynaBoost asks your browser to add
   Dataverse's impersonation header (`MSCRMCallerID`, with that user's id)
@@ -53,13 +59,14 @@ Power Apps, Power Automate, Dynamics 365 and Azure DevOps pages.
   solution holds and keeps only its apps (their ids, names and kinds), to
   offer them for pinning. For a pinned model-driven app, "Open in App
   designer" reads which solutions hold the app in a tab of its environment,
-  with your own sign-in: a tab you have open, or one it opens in the
-  background for a moment and closes again.
+  with your own sign-in: the tab you started from when it is that
+  environment's, else one it opens in the background for a moment and
+  closes again.
 - **Compare.** To compare this environment with
   another, DynaBoost reads the other one in a tab of that environment, with
-  your own sign-in: a tab you have open, or one it opens in the background
-  for a moment and closes again - after asking you, unless you chose "Don't
-  ask again". The list of your environments is read the same way from
+  your own sign-in: one it opens in the background for a moment and closes
+  as soon as it is done - after asking you, unless you chose "Don't ask
+  again". The list of your environments is read the same way from
   make.powerapps.com: a small helper inside the page looks at the portal's
   own answer listing your environments as it arrives, and DynaBoost keeps
   only their names and addresses, in your browser. These tools only read.
@@ -69,12 +76,13 @@ Power Apps, Power Automate, Dynamics 365 and Azure DevOps pages.
   anywhere.
 - **Local storage.** DynaBoost stores its own settings in your browser
   (which tools are on, the order you arranged the panel's sections and
-  tiles in for each site, which sections you folded, the host names of environments you entered, your
+  tiles in for each site, which sections you folded, whether the panel shows
+  tiles or a compact list, the host names of environments you entered, your
   shortcuts to solutions and apps in My shortcuts (with their names and
   addresses - kept by Chrome sync with your profile, like your bookmarks), the
   users you last picked or starred in Impersonate, backups of journey and flow
-  definitions from before your saves - the five newest of each, removed after
-  14 days, the names and addresses of your environments as make.powerapps.com
+  definitions and of views from before your saves - the five newest of each,
+  removed after 14 days, the names and addresses of your environments as make.powerapps.com
   lists them (for Compare), whether to ask before
   opening a tab in the background, the Presenting tools' switches, keys and Spotlight size, the version the help page was last opened in, the version DynaBoost was updated to until What's new is opened (for the dot on the help button), the id of the app you last worked in, for each Dynamics 365 environment (so links to records open in that app), a short note for the make.powerapps.com tab that Edit in... or Edit table opens (which web resource, command or table to show there - removed as that tab reads it, ignored after two minutes), the command bars of the last five tables Form as JSON read (as Dynamics gave them, to show them at once next time; removed after 14 days), a count of how often the tools were used, so the
   panel can suggest a rating after a while and after an update, and for the

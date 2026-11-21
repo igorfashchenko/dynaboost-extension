@@ -3,7 +3,9 @@
  * Reads the work item through the REST API - the form renders its sections
  * lazily - and copies it as Markdown: the title, every HTML field and the
  * comments. Tracking fields (state, dates, area, iteration, links) are left
- * out.
+ * out. A test case's Steps - kept as XML, not as an HTML field - come as a
+ * table: each action with its expected result, the steps of shared steps
+ * under their own row (2.1, 2.2 ...), and the parameter values under them.
  *
  * Images never go into the text: each becomes a numbered placeholder
  * (image-1.png ...) and "Download images" saves the files under those names.
@@ -137,6 +139,88 @@
     } catch (e) {
       return api(base() + '/_apis/wit/workitems/' + id + '?api-version=7.0');
     }
+  }
+
+  // ---------- a test case's steps ----------
+
+  const STEPS = 'Microsoft.VSTS.TCM.Steps';
+  const PARAM_VALUES = 'Microsoft.VSTS.TCM.LocalDataSource';
+
+  /* The Steps field: <steps><step><parameterizedString>action</...>
+   * <parameterizedString>expected</...></step> <compref ref="1234"> (shared
+   * steps, with what follows them inside) ...</steps> - each text is HTML.
+   * [{ action, expected } | { ref }] in the order the form shows them. */
+  function stepsOf(xml) {
+    if (typeof xml !== 'string' || xml.indexOf('<steps') === -1) return [];
+    const doc = new DOMParser().parseFromString(xml, 'text/xml');
+    if (doc.getElementsByTagName('parsererror').length) return [];
+    const out = [];
+    (function walk(el) {
+      for (const c of Array.from(el.children)) {
+        if (c.tagName === 'step') {
+          const texts = Array.from(c.children).filter((x) => x.tagName === 'parameterizedString').map((x) => x.textContent || '');
+          out.push({ action: texts[0] || '', expected: texts[1] || '' });
+        } else if (c.tagName === 'compref') {
+          const ref = Number(c.getAttribute('ref'));
+          if (ref) out.push({ ref: ref });
+          // The steps after shared steps sit inside their element.
+          walk(c);
+        }
+      }
+    })(doc.documentElement);
+    return out;
+  }
+
+  // The shared steps a test case uses, read too: Map(id -> item). Theirs in turn, a few deep.
+  async function fetchShared(item) {
+    const found = new Map();
+    let ask = stepsOf((item.fields || {})[STEPS]).filter((x) => x.ref).map((x) => x.ref);
+    for (let depth = 0; depth < 3 && ask.length; depth++) {
+      const ids = Array.from(new Set(ask)).filter((id) => !found.has(id)).slice(0, 20);
+      const got = await Promise.all(ids.map((id) => fetchItem(id).catch(() => null)));
+      ask = [];
+      got.forEach((it, i) => {
+        found.set(ids[i], it);
+        if (it) ask.push.apply(ask, stepsOf((it.fields || {})[STEPS]).filter((x) => x.ref).map((x) => x.ref));
+      });
+    }
+    return found;
+  }
+
+  // A text as one cell of a table: its lines kept, a bar not read as a column.
+  const cell = (md) => String(md || '').trim().replace(/\|/g, '\\|').replace(/\n{2,}/g, '<br><br>').replace(/\n/g, '<br>');
+
+  /* The rows of the Steps table: | # | Action | Expected result |. Shared
+   * steps are one row with their title, their own steps numbered under it. */
+  function stepRows(xml, ctx, prefix, depth) {
+    const rows = [];
+    let n = 0;
+    for (const st of stepsOf(xml)) {
+      n++;
+      const num = prefix + n;
+      if (!st.ref) {
+        rows.push('| ' + num + ' | ' + cell(toMarkdown(st.action, '', ctx)) + ' | ' + cell(toMarkdown(st.expected, '', ctx)) + ' |');
+        continue;
+      }
+      const it = ctx.shared && ctx.shared.get(st.ref);
+      const title = it && it.fields ? it.fields['System.Title'] || '' : '';
+      rows.push('| ' + num + ' | **Shared steps #' + st.ref + (title ? ' - ' + cell(title) : '') + '**' + (it ? '' : ' _(could not be read)_') + ' | |');
+      if (it && depth < 3) rows.push.apply(rows, stepRows((it.fields || {})[STEPS], ctx, num + '.', depth + 1));
+    }
+    return rows;
+  }
+
+  // The values a test case runs with, one row a run: <NewDataSet><Table1><name>value</name>...</Table1>...
+  function paramRows(xml) {
+    if (typeof xml !== 'string' || xml.indexOf('<NewDataSet') === -1) return [];
+    const doc = new DOMParser().parseFromString(xml, 'text/xml');
+    if (doc.getElementsByTagName('parsererror').length) return [];
+    const sets = Array.from(doc.documentElement.children).filter((x) => x.tagName !== 'xs:schema' && x.children.length);
+    const names = [];
+    sets.forEach((t) => Array.from(t.children).forEach((c) => names.includes(c.tagName) || names.push(c.tagName)));
+    if (!names.length) return [];
+    const val = (t, n) => (Array.from(t.children).find((c) => c.tagName === n) || {}).textContent || '';
+    return ['| ' + names.join(' | ') + ' |', '|' + names.map(() => '---').join('|') + '|'].concat(sets.map((t) => '| ' + names.map((n) => cell(val(t, n))).join(' | ') + ' |'));
   }
 
   async function fetchComments(project, id) {
@@ -550,6 +634,23 @@
       lines.push('## ' + label, '', md, '');
     });
 
+    // A test case, or shared steps: what to do and what to see, step by step.
+    used[STEPS] = used[PARAM_VALUES] = true;
+    const rows = stepRows(f[STEPS], ctx, '', 0);
+    if (rows.length) {
+      stats.sections++;
+      stats.steps = rows.length;
+      lines.push('## Steps', '', '| # | Action | Expected result |', '|---|---|---|');
+      lines.push.apply(lines, rows);
+      lines.push('');
+      const values = paramRows(f[PARAM_VALUES]);
+      if (values.length) {
+        lines.push('### Parameter values', '');
+        lines.push.apply(lines, values);
+        lines.push('');
+      }
+    }
+
     // Custom HTML fields (Custom.*, process-specific fields) come last.
     Object.keys(f).forEach((key) => {
       if (used[key]) return;
@@ -872,6 +973,8 @@
       const comments = await fetchComments(project, id);
 
       const ctx = newContext();
+      // A test case's shared steps are items of their own: read to be written out with it.
+      ctx.shared = await fetchShared(item).catch(() => new Map());
       anonReset();
       const built = build(item, comments, ctx);
       const name = label((item.fields || {})['System.WorkItemType'], id);
@@ -884,6 +987,7 @@
 
       const bits = [];
       bits.push(built.stats.sections + (built.stats.sections === 1 ? ' section' : ' sections'));
+      if (built.stats.steps) bits.push(built.stats.steps + (built.stats.steps === 1 ? ' step' : ' steps'));
       bits.push(built.stats.comments + (built.stats.comments === 1 ? ' comment' : ' comments'));
       bits.push('names removed');
 

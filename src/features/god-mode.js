@@ -104,14 +104,44 @@
     return !!(root && root.classList.contains('db-open'));
   };
 
-  // The × on the frame: the same as switching the tile off.
+  // The × on the frame: the same as switching the tile off. A helper that
+  // has just come in (late, or a newer one in an older one's place) knows
+  // nothing yet: told again.
   function onEvent(e) {
     if (e.source !== window || !e.data || e.data.source !== SRC + '-event') return;
-    if (!active || e.data.type !== 'god-off-request') return;
+    if (!active) return;
+    if (e.data.type === 'ready') {
+      window.postMessage({ source: SRC, op: 'god', on: true }, location.origin);
+      return;
+    }
+    if (e.data.type !== 'god-off-request') return;
     byFrame = true;
     DynaBoost.toggle('god-mode');
   }
   window.addEventListener('message', onEvent);
+
+  /* While on and not yet answered: asked again. A page that loads with
+   * nothing kept in the browser (after Clear cache, a first visit) holds the
+   * browser for seconds - what is asked before the helper is in is heard by
+   * no one, and the page Dynamics writes anew (document.open) takes the
+   * answer's listener off. A helper that stays silent is put in again. */
+  let sure = false; // the helper has answered: God mode is on in it
+  let holding = false;
+  async function hold() {
+    if (holding) return;
+    holding = true;
+    try {
+      for (let n = 1; active && !sure && n <= 40; n++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        if (!active || sure) break;
+        if (n % 2 === 0) window.__dbFormToolsInjected = false;
+        const r = await ask('god', true);
+        if (active && r && !r.error) sure = true;
+      }
+    } finally {
+      holding = false;
+    }
+  }
 
   async function enable() {
     if (!top || active) return;
@@ -121,8 +151,12 @@
     window.addEventListener('message', onEvent);
     keep = setInterval(() => window.addEventListener('message', onEvent), 1500);
     const loud = fromPanel();
+    sure = false;
     const r = (await ask('god', true)) || {};
-    if (!loud || !active) return;
+    if (!active) return;
+    if (r.error) hold();
+    else sure = true;
+    if (!loud) return;
     if (r.error) {
       toast('God mode', r.error, true);
       return;
@@ -144,6 +178,7 @@
   async function disable() {
     if (!active) return;
     active = false;
+    sure = false;
     clearInterval(keep);
     keep = 0;
     const loud = byFrame || fromPanel();

@@ -42,6 +42,20 @@
    * A long entry is items: a list under its version. */
   const NEWS = [
     {
+      v: '2.43',
+      items: [
+        'New: <b>Copy view columns</b> (make.powerapps.com – a table or a view’s designer) – a table’s views made alike in one go: one view’s columns – which, in which order, how wide – on the others, each keeping its own filter, or with <b>Copy filters</b> the source’s filter too, each keeping its Status. Every view’s filter in words and the change previewed; <b>Apply</b> saves without publishing; <b>Versions</b> and <b>Undo</b>; a view renamed or a public one duplicated in the same tab.',
+        'New: <b>Tiles or a compact list</b> – beside the pencil in the panel’s footer: the tools as tiles or as a list, two to a line, so a long page of tools fits without scrolling; one choice for every site and tab.',
+        'New (preview): <b>Plugin traces</b> (model-driven apps) – why a save failed: the plug-in trace log by execution, every step in order with its time, the error on top in plain words, the trace and the system jobs under it; filtered by time, table, plug-in, solution, errors or text; By plugin; Copy for a ticket.',
+        'New switches for the maker portal: <b>Copy code button</b> – the whole code of a web resource you edit in one click; <b>Copy choices button</b> – a choice’s options (number, label, value) as a table that pastes into Excel.',
+        '<b>Export run</b>: Files also lists a file named only by its address – one a document generator saved to SharePoint, a link written to a record; an action that touched a row in several iterations of a loop is one line with them, and <b>One iteration</b> shows what one iteration touched.',
+        '<b>Copy work item</b>: a test case comes with its Steps – actions and expected results, shared steps and parameter values.',
+        '<b>Edit journey</b>: JSON that does not parse says where and why, a click goes there; JSON pasted from a mail or a chat is cleaned, a whole journey pasted as one line is formatted.',
+        '<b>Clear cache</b>: when a form’s unsaved changes stop clearing at once, the window names the changed columns.',
+        'Fixes: <b>God mode</b> comes on after a slow reload; <b>Clear cache</b> switches it off and says so – switch it on again once the form is there; <b>Export run</b> leaves a file’s content out of the copies under any name a connector gives it; <b>Compare</b> and <b>Copy view columns</b> read another environment in a tab of their own, after asking, and close it as soon as they are done.'
+      ]
+    },
+    {
       v: '2.42',
       items: [
         'New: <b>Films</b> – a short film of each release on DynaBoost’s YouTube channel: under its entry here, from the YouTube button at the top of this page, and as the first card of the tour after an update.',
@@ -123,6 +137,7 @@
   // asks YouTube for nothing until the click). Its own list, not in NEWS: an
   // entry says what changed, the film shows it.
   const FILMS = {
+    '2.43': { id: 'UfgqoU8N6EA', len: '2:35', title: 'What’s new in 2.43' },
     '2.42': { id: 'YfL8spDGdVI', len: '1:32', title: 'What’s new in 2.42' },
     '2.41': { id: 'KtrwCy1Ftyg', len: '0:58', title: 'What’s new in 2.41' },
     '2.40': { id: 'r074PFTNObU', len: '1:05', title: 'What’s new in 2.40' },
@@ -154,11 +169,11 @@
 
   // The tiles' names, as the panel shows them.
   const NAMES = {
-    'table-export': 'Export table', 'open-all': 'Open on All', 'open-objects': 'Open on Objects', 'auto-advanced': 'Open advanced options', 'column-defaults': 'Column defaults', 'lower-schema': 'Lowercase schema names', 'ctrl-save': 'Ctrl+S saves', 'panel-scroll': 'Keep panel position', 'component-names': 'Component names', 'classic-open': 'Open in classic',
+    'table-export': 'Export table', 'open-all': 'Open on All', 'open-objects': 'Open on Objects', 'auto-advanced': 'Open advanced options', 'column-defaults': 'Column defaults', 'lower-schema': 'Lowercase schema names', 'copy-code': 'Copy code button', 'copy-choices': 'Copy choices button', 'ctrl-save': 'Ctrl+S saves', 'panel-scroll': 'Keep panel position', 'component-names': 'Component names', 'classic-open': 'Open in classic',
     'canvas-code': 'Edit screen code', 'canvas-check': 'App checker report', 'canvas-tree': 'Expand tree', 'flow-edit': 'Edit flow', 'flow-run-export': 'Export run',
-    'expand-all': 'Expand all steps', 'form-dump': 'Form as JSON', 'form-editor': 'Edit form', 'table-open': 'Edit table', 'view-editor': 'Edit view', 'logical-names': 'Logical names',
+    'expand-all': 'Expand all steps', 'form-dump': 'Form as JSON', 'form-editor': 'Edit form', 'table-open': 'Edit table', 'view-editor': 'Edit view', 'view-columns': 'Copy view columns', 'logical-names': 'Logical names',
     'record-history': 'Record history', 'last-change': 'Last change',
-    'god-mode': 'God mode', 'copy-record': 'Copy record', impersonate: 'Impersonate', 'advanced-find': 'Advanced Find', 'any-table': 'Open any table',
+    'god-mode': 'God mode', 'copy-record': 'Copy record', impersonate: 'Impersonate', 'plugin-traces': 'Plugin traces', 'advanced-find': 'Advanced Find', 'any-table': 'Open any table',
     'system-jobs': 'System jobs', 'clear-cache': 'Clear cache', workflow: 'Open workflow', journey: 'Edit journey', 'ado-workitem': 'Copy work item',
     'ado-taskboard-expand': 'Expand items', 'wiki-expand': 'Expand wiki tree', 'wiki-tree': 'Copy wiki tree',
     'blur-data': 'Blur data', presenting: 'Presenting'
@@ -183,6 +198,7 @@
         'Only the tiles for the current page are listed; <b>Show all</b> in the footer shows the rest.',
         'A section’s name folds it, as the chevron of My shortcuts does, and it stays folded until you open it. Folded, it shows how many tiles it holds – and how many of its switches are on.',
         'The <b>✎</b> in the footer arranges the panel: drag tiles within their section, and sections by their name (or the arrow keys). My shortcuts stays on top. Each site – Dynamics 365, Power Apps, Power Automate, Azure DevOps – keeps its own order; moved to the top or the bottom, a section or tile stays there on every page of the site. <b>Reset order</b> puts the site back as it came.',
+        'Beside the <b>✎</b>: the tools as <b>tiles</b> or as a <b>compact list</b> – two to a line, every row the same size, so a long page of tools fits without scrolling. One choice for every site and tab.',
         '<b>Action</b> tiles run once. <b>Switches</b> remember their state – except “this page only” and “this tab only”.',
         'The id under the header (record, table, flow, run, solution, work item…) copies on click.',
         'Light / dark follows the browser until you pick one; a later change in the browser wins. Tabs DynaBoost opens follow the panel.',
@@ -209,7 +225,7 @@
             'In a solution <b>[+]</b> pins it; when the solution holds apps, a small list offers what of it is not pinned yet – the solution and its apps; one left, or an app ticked in the solution’s list, is pinned at once.',
             'In an open model-driven app <b>[+]</b> pins the app. Anywhere else [+] takes a pasted link – to a solution, a model-driven app or a canvas app.',
             'An app opens to use it: a model-driven app in Dynamics 365, a canvas app in the player.',
-            'A model-driven app has a third tool beside ✎ and ✕: <b>Open in App designer</b> – it lists the solutions the app is in (yours first, then the Default Solution, then the managed ones) and opens the designer in the one you pick. It reads them in a tab of the app’s environment – yours, or one opened in the background for a moment.',
+            'A model-driven app has a third tool beside ✎ and ✕: <b>Open in App designer</b> – it lists the solutions the app is in (yours first, then the Default Solution, then the managed ones) and opens the designer in the one you pick. It reads them in a tab of the app’s environment – the one you are in, or one opened in the background for a moment and closed again.',
             '!One shortcut per solution or app, matched by its address – a rename does not hide a duplicate.',
             '<kbd>Ctrl</kbd>+click or middle click: new tab. Drag to reorder; hover for ✎ and ✕. Renaming an environment renames all its shortcuts.',
             'From Azure DevOps a shortcut opens in a new tab.',
@@ -226,7 +242,8 @@
             'The <b>pencil</b> in the tile’s corner – it shows when you point at the tile – opens the window again: tick other kinds, or untick <b>Next time clear at once</b> to see the window at every click.',
             'Only the site you are on, and never cookies. Other environments, other sites and DynaBoost’s own settings are not touched.',
             '!make.powerapps.com and Power Automate keep their sign-in in Page settings and This tab’s memory: clearing those may sign you in again – usually by itself. Dynamics 365 and Azure DevOps keep you signed in.',
-            '!A Dynamics 365 form with unsaved changes is never cleared at once: the window opens and says so first.'
+            'With <b>God mode</b> on, clearing switches it off and says so – the page then loads its scripts late, and they would lock again what God mode opened. Switch it on again once the form is there.',
+            '!A Dynamics 365 form with unsaved changes is never cleared at once: the window opens, says so and names the changed columns – a form script that sets a value on load makes them too; Cancel has the focus, so Enter loses nothing. Saved, the next click clears at once again.'
           ]
         },
         {
@@ -256,6 +273,23 @@
           where: 'any list in the maker portal – tables, columns, choices, solutions',
           what: 'The whole list – copy it as Markdown or CSV, or download it as CSV.',
           facts: ['Scrolls the list itself, so rows off screen are included.', '!Takes the biggest grid on the page, with the columns it shows.']
+        },
+        {
+          id: 'view-columns',
+          kind: 'action',
+          where: 'a table – its views, columns or forms – or a view’s designer',
+          what: 'A table’s views made alike in one go: one view’s columns – which, in which order, how wide – on the others, each keeping its own filter: Active Projects’ columns on Inactive Projects, still the inactive ones. Its filter too, if you wish.',
+          facts: [
+            'Every system view of the table in one tab – public, Quick Find, Lookup, Associated, Advanced Find – each with its <b>filter in words</b> (“Status is Active and Owner is me”, the columns a Quick Find searches) and what the copy would change: <b>+</b> added, <b>−</b> taken away, order, widths, filter.',
+            '<b>From</b>: the view in the designer at first, else the default public one – any other in one click. <b>Same columns</b> gives the views exactly these; <b>Add missing</b> only adds what a view lacks, at its end. <b>Copy widths</b>, <b>Copy sort order</b> as you wish.',
+            '<b>Copy filters</b>: the source’s filter on each view, shown under <b>Filter after</b> – each keeps its own Status (Inactive stays inactive; one with none takes the source’s, marked <b>Status from the source</b>) and the columns its Quick Find searches.',
+            'Tick the views and <b>Apply</b>: saved, not published – as the designer’s Save. <b>Publish</b> publishes the table (with whatever else in it waits to be published); <b>Designer ↗</b> on a view opens it to check it and publish it there. <b>Undo</b> puts back what Apply changed.',
+            '<b>Versions</b>: the views as opened, after each of the last 5 Applies, and the backups kept in this browser before every save (the 5 newest, 14 days) – a click ticks the views it would put back; Apply writes them.',
+            '<b>Rename</b> a view, or <b>Duplicate</b> a public one – a new public view with the same columns, filter and sort, named “… (1)” at first – from the same tab: saved, not published.',
+            'In a solution of yours, the changed and new views are added to it (<b>Add to</b> …), unless the whole table is in it already.',
+            'A related table’s column (Primary Contact › Email) comes with its link – one that never takes rows away. <b>All views</b>: every column against every view; <b>Copy from</b> on a view makes it the source.',
+            '!Writes with your own rights – a customizer’s. A managed view that may not be changed, and a kind of view the designer does not offer, is shown and left alone. Read and written in a tab of the environment, with your sign-in: one opened in the background after asking (unless you chose Don’t ask again) and closed as soon as it is done.'
+          ]
         },
         {
           id: 'open-all',
@@ -292,6 +326,27 @@
           where: 'the New column panel',
           what: 'A new column starts the way your project wants it: <b>Allow form fill assistance</b> cleared.',
           facts: ['Never in Edit column - a saved column stays as it is.', 'A checkbox you click yourself stays as you set it.', 'At Save the panel is made to take the box as it shows it – a cleared box is saved cleared, even if the panel took its default back meanwhile.', '!The checkbox is found by its English label.']
+        },
+        {
+          id: 'copy-code',
+          kind: 'switch',
+          where: 'the Edit web resource panel',
+          what: 'While on, a button the maker portal lacks: <b>Copy code</b> just over the Code box of a web resource – the whole code on the clipboard in one click.',
+          facts: [
+            'It looks and answers the pointer as the panel’s own Save does – the same size and colours, greyed with Save while the panel saves – and stays with its field whatever the zoom or the width of the panel.',
+            '!Off by default. UI languages: EN, PL, DE, FR, ES, IT, NL.'
+          ]
+        },
+        {
+          id: 'copy-choices',
+          kind: 'switch',
+          where: 'the panel of a choice or a choice column',
+          what: 'While on, a button the maker portal lacks: <b>Copy choices</b> on the line of the word Choices, at its right end before Sort – the options as a table on the clipboard.',
+          facts: [
+            'The table is number, label, value (as it is: 122280000) – it pastes into Excel as three columns, and into a mail or a chat as a table.',
+            'It looks and answers the pointer as the panel’s own Save does – greyed with it while the panel saves – and stays on its line whatever the zoom or the width of the panel.',
+            '!Off by default. UI languages: EN, PL, DE, FR, ES, IT, NL.'
+          ]
         },
         {
           id: 'lower-schema',
@@ -435,9 +490,10 @@
           facts: [
             'The header says how long the run took and who or what started it – a person (a button, Power Apps), a change to a row, a schedule, a parent flow (with a link to its run), an event in another service – and whether it was a test from the designer or a resubmitted run.',
             '<b>Records</b> beside the steps: every Dataverse row the run read, created, changed or pointed at – its table, its name, the steps that touched it, the columns a create or an update set – one click opens it in Dynamics 365, in the app you last worked in there.',
-            '<b>Files</b> under them: every SharePoint file the run created, changed, copied, read or deleted – its folder, its size, the steps that touched it; the name opens the file (Word, Excel and PowerPoint in the browser), the line under it its folder. A file in a Dynamics 365 document folder puts its record in Records. OneDrive files are listed without a link – the run does not carry their address.',
+            'A loop does not repeat itself in Records: an action that touched a row in several iterations is one line with them – <b>×8 · #1–8</b>. <b>One iteration</b> over the list shows only what one iteration touched – step with ‹ › there, or pick the iteration in the run: Records follow it.',
+            '<b>Files</b> under them: every SharePoint file the run created, changed, copied, read or deleted – its folder, its size, the steps that touched it; the name opens the file (Word, Excel and PowerPoint in the browser), the line under it its folder. A file only named by its address – a document generator that saves it to SharePoint itself and answers with where, a record’s column that holds the link – is there too: <b>Returned</b> by the step that gave its address, <b>Linked</b> where it was written to a record, <b>Given</b> where a step was given it; a link inside a longer text, a sharing link or a page is not a file. A file in a Dynamics 365 document folder puts its record in Records. OneDrive files from the OneDrive connector are listed without a link – the run does not carry their address; <b>Copy without personal data</b> hides the owner in a OneDrive address.',
             'Under them, each part only when the run has it: <b>Emails</b> it sent – subject, to, cc, attachments; <b>Approvals</b> – the outcome, who answered and what they wrote; <b>Child flows</b> – one click opens the run of the child; <b>HTTP calls</b> – method, address, status code; <b>Variables</b> – the value each ended with (“so far” when its loop is not read to the end); <b>Slowest steps</b> – where the time went. A click on a step goes to it.',
-            'A file’s content – base64 or the bytes of a .docx or .pdf – is left out of the tab and the copies; its size stands in its place.',
+            'A file’s content – base64, under whatever name a connector gives it (a document generator’s too), or the bytes of a .docx or .pdf – is left out of the tab and the copies; its size stands in its place.',
             '<b>Copy without personal data</b>: Copy everything with people’s names, emails, phone numbers and addresses, keys, passwords and signatures replaced – each person and email by one number all through (&lt;person 1&gt;, &lt;email 2&gt;) – to paste into a ticket.',
             '!It replaces what it recognises – text a person typed into the flow can still hold a name; read it before you share it.',
             'A failed run opens with <b>Where it failed</b>: the step the failure started in – not the scopes that failed because of it – with its code, its message and the service’s own words from the response, even when Power Automate keeps them behind a link; a click goes to the step.',
@@ -496,7 +552,7 @@
             'Form and table: the fields (place, label, hidden, read-only, required, the logic icons), the columns and the logic – on or off – as in Form as JSON. Table and form matched by name; not there by name, you pick the form.',
             'Record: field by field; in another environment a lookup matches by the name it shows. A pasted link brings its environment.',
             '<b>show all</b> on a section opens all of it; <b>hide system fields</b> leaves out created / modified, owner and the like.',
-            '!Reads the other environment in its own tab: one you have open, or one DynaBoost opens in the background for a moment and closes again.',
+            '!Reads the other environment in a tab of its own: DynaBoost opens it in the background for a moment, after asking (unless you chose Don’t ask again), and closes it as soon as it is done.',
             '!In the background only <b>make.powerapps.com</b> (the list of your environments – names and addresses, kept in the browser; an open make.powerapps.com tab keeps it fresh) and the other environment’s address (to read from it). It asks first; <b>Don’t ask again</b> turns that off, the switch in the dialog turns it back on.',
             '<b>Get the list</b> shows how long it is taking; <b>Stop</b>, <b>Cancel</b> or ✕ stop it and close its tab.',
             'Only reads, with your own sign-in. Not signed in there: it says so, with a button to sign in.'
@@ -566,6 +622,7 @@
           what: 'Shows hidden fields, sections and tabs, unlocks fields, makes required ones optional – and keeps it while the form’s scripts run.',
           facts: [
             'Stays on – a reload, another record, another tab – until you switch it off here or with the × on the gold frame; off puts the form back as it was.',
+            '<b>Clear cache</b> switches it off: a page that loads with nothing kept in the browser runs its scripts late, after God mode – the message says so, and you switch it on again once the form is there.',
             'Saves nothing; a save still goes through the server’s rules.',
             '!Stays locked: calculated, rollup, formula and system columns, field security, read-only records – the message says which and why.'
           ]
@@ -601,6 +658,22 @@
           ]
         },
         {
+          id: 'plugin-traces',
+          kind: 'action',
+          where: 'any page of a model-driven app',
+          what: 'Why a save failed: the plug-in trace log of this environment in a tab, by execution – what ran, in order, how long each step took, and the error on top in plain words.',
+          facts: [
+            'An <b>execution</b> is one save or message: every plug-in step it ran shares its CorrelationId. A step run by another plug-in is indented (depth 2, 3…). Red is an exception – or an error the plug-in caught and wrote in its trace (“an error occurred”, “inner exception”); a step slower than 2 s is gold.',
+            'The newest failed execution opens at once, its failing step with its exception and trace; a click on a step opens its own. Under them the system jobs with the same CorrelationId – an async plug-in’s retries and error.',
+            'Filters, applied by Dataverse: the time (15 minutes to all that is kept), the table (the page’s own when opened on a record or a list) and the plug-in – every one with a trace in that time, with how many (counted by Dataverse, not only the entries read), then those with steps registered and nothing in that time, (0) – each list with a search (a table by display or logical name, a plug-in by its class or short name, a solution by display or unique name); ↻ reads them again – a <b>solution</b> (its plug-in steps and the types of its assemblies), <b>Only errors</b>, and text in the trace or the exception. A CorrelationId pasted there finds its execution, whatever the time.',
+            '<b>By plugin</b>: runs, errors, average and slowest time per plug-in, message, table and mode – a click lists its executions. <b>JSON</b>: every listed execution with its steps and traces.',
+            '<b>Copy</b> takes what the view shows (a table, or the JSON); <b>Copy all</b> and the disk the whole JSON; <b>Copy for ticket</b> one execution as Markdown – the error, every step, the traces. <kbd>/</kbd> goes to the text, <kbd>↑</kbd> <kbd>↓</kbd> walk the list.',
+            'The list reads 100 entries at a time, without the trace text; the text is read for the execution you open. Nothing is read in the background.',
+            '!The header says what the environment keeps – Off, Exceptions (only failed runs) or All – and changes it for the whole environment, after a question (a System Administrator can). Dataverse deletes traces after 24 hours by default.',
+            '!<b>Preview</b>: still being tried – tell us what you think with Suggest an idea.'
+          ]
+        },
+        {
           id: 'advanced-find',
           kind: 'action',
           where: 'model-driven apps, and make.powerapps.com inside an environment',
@@ -633,6 +706,7 @@
           what: 'The journey’s definition as JSON – copy, download, format, edit.',
           facts: [
             '!Saves only a Draft journey, and not when it changed since you opened it.',
+            'JSON that does not parse says where – line and column – and why in plain words (a line break inside a text, a curly quote, cut short); a click on the message goes there. JSON pasted from a mail or a chat with invisible characters between its values is cleaned as it is pasted – nothing inside a text is touched. A whole journey pasted as one line is formatted as it is pasted – and pasted with nothing marked it takes the place of the one that was there (Ctrl+Z brings that back), instead of standing beside it.',
             '<b>Versions</b>: the original + the last 5 saves of this tab, a click loads one; under them this journey’s backups from before each save, kept 14 days (5 newest of all journeys).',
             '!Publishing stays in the designer.'
           ]
@@ -652,6 +726,7 @@
           facts: [
             '!Content only – no state, assignee, dates, area, iteration, tags, priority, estimates or links.',
             'Read through the API, so long descriptions and all comments are complete.',
+            'A <b>test case</b> comes with its <b>Steps</b> as a table – each action with its expected result; shared steps are one row with their title and their own steps under it (2.1, 2.2 …); the parameter values follow.',
             'Images become numbered placeholders (image-1.png …) – never base64 in the text. With images, both buttons copy the text: <b>Copy without images</b> only the text, <b>Copy with images</b> the text and the files saved under those names – one image as it is, several in one ZIP. They fold down in the panel for 6 s, like Say thanks. Without images, the text is copied at once.',
             'Fields and comments written with the Markdown editor stay Markdown; names written in the text are replaced too.'
           ]
@@ -726,10 +801,10 @@
       name: 'Privacy & permissions',
       facts: [
         'No server, analytics or tracking; requests go only to the Microsoft service you have open, with your sign-in.',
-        'Writes only on your click – a flow, a draft workflow or journey, code applied in Studio. Impersonate adds one header to one tab.',
+        'Writes only on your click – a flow, a draft workflow or journey, code applied in Studio, the views you change in Copy view columns, the plug-in trace log setting in Plugin traces. Impersonate adds one header to one tab.',
         'Report a bug and Suggest an idea open a form on Tally (tally.so) – only on your click, and only what you write is sent, with the version, browser, panel section, tool and kind of page.',
         'The films open on YouTube – only on your click; their pictures in What’s new and in the tour are part of DynaBoost, so nothing is asked of YouTube before.',
-        'Stored in the browser: switch states, light / dark, the panel’s order, org addresses, My shortcuts (Chrome sync), flow and journey backups, Impersonate favorites and recent users, and a count of tools used - for the rating hint on the heart.',
+        'Stored in the browser: switch states, light / dark, tiles or list, the panel’s order, org addresses, My shortcuts (Chrome sync), flow, journey and view backups, Impersonate favorites and recent users, and a count of tools used - for the rating hint on the heart.',
         'The clipboard is read only by the screen code editor.',
         'Permissions: storage, scripting, clipboard, offscreen, declarativeNetRequestWithHostAccess (Impersonate).'
       ]

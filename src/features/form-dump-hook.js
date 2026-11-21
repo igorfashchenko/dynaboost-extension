@@ -51,6 +51,7 @@
       // The Power Platform environment id - what the maker portal links use.
       envId: gc ? safe(() => gc.organizationSettings.bapEnvironmentId, null) : null,
       unsaved: safe(() => ent.getIsDirty(), false),
+      changed: [], // the labels of the columns with unsaved changes
       tabs: {},
       sections: {},
       controls: {},
@@ -136,10 +137,12 @@
 
     safe(() =>
       ent.attributes.forEach((a) => {
+        const dirty = safe(() => a.getIsDirty(), false);
         out.attributes[a.getName()] = {
-          unsaved: safe(() => a.getIsDirty(), false),
+          unsaved: dirty,
           required: safe(() => a.getRequiredLevel(), null)
         };
+        if (dirty) out.changed.push(safe(() => a.controls.get(0).getLabel(), null) || a.getName());
       })
     );
 

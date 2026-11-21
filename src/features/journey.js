@@ -148,6 +148,71 @@
     return v === null ? text : JSON.stringify(v, null, 2);
   }
 
+  /* JSON that went through a mail, a chat or a document comes back with
+   * what no JSON may hold between its values: spaces that are not spaces
+   * (non-breaking, thin), characters that take no room (zero-width, a byte
+   * order mark), line separators. Outside the texts they mean nothing, so
+   * they are made plain spaces and line ends, or dropped - what is inside a
+   * text ("...") stays exactly as it is. { text, changed: how many }. */
+  const SPACE_LIKE = /[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/;
+  const NO_WIDTH = /[\u200b-\u200d\u2060\ufeff]/;
+  const LINE_LIKE = /[\u2028\u2029]/;
+  function tidy(text) {
+    let out = '';
+    let changed = 0;
+    let inText = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inText) {
+        out += c;
+        if (c === '\\' && i + 1 < text.length) out += text[++i];
+        else if (c === '"') inText = false;
+        continue;
+      }
+      if (c === '"') inText = true;
+      if (c.charCodeAt(0) < 160) out += c;
+      else if (SPACE_LIKE.test(c)) (out += ' '), changed++;
+      else if (NO_WIDTH.test(c)) changed++;
+      else if (LINE_LIKE.test(c)) (out += '\n'), changed++;
+      else out += c;
+    }
+    return { text: out, changed: changed };
+  }
+
+  // Where JSON.parse gave up, and why in plain words: { pos, line, col, why }.
+  function whereBroken(text, err) {
+    const msg = String((err && err.message) || err);
+    const m = /position (\d+)/.exec(msg);
+    // No place told (the very first character): the first one between the values that no JSON may hold.
+    let found = -1;
+    if (!m) {
+      let inText = false;
+      for (let i = 0; i < text.length && found < 0; i++) {
+        const c = text[i];
+        if (inText) {
+          if (c === '\\') i++;
+          else if (c === '"') inText = false;
+        } else if (c === '"') inText = true;
+        else if (c.charCodeAt(0) >= 160 && (SPACE_LIKE.test(c) || NO_WIDTH.test(c) || LINE_LIKE.test(c) || /[\u201c\u201d\u2018\u2019]/.test(c))) found = i;
+      }
+      if (found < 0) return { pos: -1, why: msg.replace(/, "[\s\S]*" is not valid JSON$/, '') };
+    }
+    const pos = m ? Math.min(Number(m[1]), text.length) : found;
+    const before = text.slice(0, pos);
+    const line = before.split('\n').length;
+    const col = pos - before.lastIndexOf('\n');
+    const c = text[pos] || '';
+    let why = msg.replace(/\s+in JSON at position.*$/, '').replace(/\s*\(line \d+ column \d+\)\s*$/, '');
+    if (/Bad control character/.test(msg) && (c === '\n' || c === '\r')) why = 'a line break inside a text - the JSON was wrapped where it was copied from; paste it as one line';
+    else if (/[\u201c\u201d\u2018\u2019]/.test(c)) why = 'a curly quote - something the JSON went through changed its quotes; copy it again as plain text';
+    else if (SPACE_LIKE.test(c) || NO_WIDTH.test(c) || LINE_LIKE.test(c)) why = 'a character that only looks like a space';
+    else if (pos >= text.length) why = 'the JSON ends too early - a part of it is missing';
+    // Whole up to here, and more after it: pasted beside what was there, or twice.
+    const tail = /after JSON/.test(msg);
+    if (tail) why = 'the journey is whole up to here and more text follows it - a second copy, or what was here before the paste. Click here to mark what follows, then press Delete';
+    return { pos: pos, line: line, col: col, why: why.replace(/\s+at position \d+.*$/, ''), tail: tail };
+  }
+
   // ---------- backups ----------
 
   const fresh = (b) => !!b && Date.now() - Date.parse(b.savedAt) < BACKUP_DAYS * 86400000;
@@ -260,7 +325,7 @@
       'button svg{width:14px;height:14px;vertical-align:-2px;margin-right:6px}' +
       'button.db-ok,button.db-ok:hover:enabled{border-color:var(--dbc-bd-1c6b32);color:var(--dbc-fg-1c6b32);background:var(--dbc-bg-e4f4e8)}' +
       'button.db-bad,button.db-bad:hover:enabled{border-color:var(--dbc-bd-a11a1a);color:var(--dbc-fg-a11a1a);background:var(--dbc-bg-fde8e8)}' +
-      '.status{margin-left:auto;font-size:12.5px;color:var(--dbc-fg-56637f)}.status.bad{color:var(--dbc-fg-a11a1a)}' +
+      '.status{margin-left:auto;font-size:12.5px;color:var(--dbc-fg-56637f)}.status.bad{color:var(--dbc-fg-a11a1a)}.status.go{cursor:pointer;text-decoration:underline dotted}' +
       'main{flex:1;display:flex;gap:14px;min-height:0;padding:14px 22px 18px}' +
       'textarea{flex:1;width:100%;resize:none;padding:14px 18px;border:1px solid var(--dbc-bd-dde3f0);border-radius:8px;background:var(--dbc-bg-fff);color:var(--dbc-fg-10224e);font:12.5px/1.45 ui-monospace,Consolas,monospace;white-space:pre;tab-size:2}' +
       'textarea:focus{outline:2px solid var(--dbc-bd-1e6bff);outline-offset:-1px}' +
@@ -321,10 +386,29 @@
     DynaBoost.code.attach(tab, ed, 'json');
     ed.value = original;
 
-    function setStatus(text, bad) {
+    // Where the JSON breaks, while it does: a click on the message goes there.
+    let broken = -1;
+    let brokenTail = false; // what follows a whole journey: the click marks all of it
+    function setStatus(text, bad, at, tail) {
       status.textContent = text;
       status.classList.toggle('bad', !!bad);
+      broken = at >= 0 ? at : -1;
+      brokenTail = !!tail;
+      status.classList.toggle('go', broken >= 0);
+      status.title = broken >= 0 ? 'Click to go there' : '';
     }
+    status.addEventListener('click', () => {
+      if (broken < 0) return;
+      const at = Math.min(broken, ed.value.length);
+      // Into view: its line in the middle, its place on the line a little from the left.
+      const lines = ed.value.slice(0, at).split('\n');
+      const lh = parseFloat(tab.getComputedStyle(ed).lineHeight) || 19;
+      const cw = (parseFloat(tab.getComputedStyle(ed).fontSize) || 13) * 0.55;
+      ed.focus();
+      ed.setSelectionRange(at, brokenTail ? ed.value.length : Math.min(at + 1, ed.value.length));
+      ed.scrollTop = Math.max(0, (lines.length - 1) * lh - ed.clientHeight / 2);
+      ed.scrollLeft = Math.max(0, lines[lines.length - 1].length * cw - ed.clientWidth / 3);
+    });
 
     function check() {
       const text = ed.value;
@@ -333,7 +417,8 @@
       try {
         parsed = JSON.parse(text);
       } catch (e) {
-        setStatus('Invalid JSON: ' + e.message, true);
+        const w = whereBroken(text, e);
+        setStatus('Invalid JSON' + (w.pos >= 0 ? ' at line ' + w.line + ', column ' + w.col : '') + ': ' + w.why, true, w.pos, w.tail);
         get('save').disabled = true;
         return { ok: false, modified: modified };
       }
@@ -348,6 +433,97 @@
       timer = setTimeout(check, 250);
     });
     check();
+
+    /* Text put in by the editor itself (a paste it cleaned or formatted).
+     * Set straight into the box: the browser's own way for a script to type
+     * (execCommand insertText) takes seconds for a text this long - the tab
+     * stands still. The box then has nothing to undo, so the step back is
+     * kept here: Ctrl+Z right after brings back what was there. */
+    let undo = null;
+    function put(text, start, end) {
+      const before = ed.value;
+      const after = before.slice(0, start) + text + before.slice(end);
+      ed.value = after;
+      ed.setSelectionRange(start + text.length, start + text.length);
+      undo = { before: before, after: after, start: start, end: end };
+    }
+    ed.addEventListener('keydown', (e) => {
+      if (!undo || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || String(e.key).toLowerCase() !== 'z') return;
+      // Only while nothing was typed since.
+      if (ed.value !== undo.after) {
+        undo = null;
+        return;
+      }
+      e.preventDefault();
+      ed.value = undo.before;
+      ed.setSelectionRange(undo.start, undo.end);
+      undo = null;
+      clearTimeout(timer);
+      check();
+    });
+
+    // The start of the text in view, the caret there: after the whole text was put in anew (a paste, Format), where the view was means nothing.
+    function toStart() {
+      ed.setSelectionRange(0, 0);
+      ed.scrollTop = 0;
+      ed.scrollLeft = 0;
+    }
+
+    /* A paste. Two things are done to it, and only when the result still is
+     * the same JSON:
+     *  - JSON that does not parse as it is, and does once what no JSON may
+     *    hold between its values is cleaned (tidy), goes in cleaned;
+     *  - a whole journey pasted over everything (or into an empty editor)
+     *    goes in formatted, as the editor shows a journey it opens - copied
+     *    from a place that keeps it on one line, it would be one line
+     *    thousands of characters long;
+     *  - a whole journey pasted with nothing marked, at a place where it
+     *    cannot stand (the text would no longer be JSON), takes the place of
+     *    everything: pasted beside the journey that was there, the two would
+     *    be no journey at all. Ctrl+Z brings the one before back.
+     * Anything else is pasted as it is. */
+    ed.addEventListener('paste', (e) => {
+      if (ed.readOnly || !e.clipboardData) return;
+      const raw = e.clipboardData.getData('text/plain');
+      if (!raw) return;
+      let whole = ed.selectionStart === 0 && ed.selectionEnd === ed.value.length;
+      let over = false;
+      let text = raw;
+      let cleaned = 0;
+      let value = parseJson(raw);
+      if (!value) {
+        const t = tidy(raw);
+        value = t.changed ? parseJson(t.text) : null;
+        if (!value) return;
+        text = t.text;
+        cleaned = t.changed;
+      }
+      if (!whole && !Array.isArray(value) && value.actions && typeof value.actions === 'object') {
+        const now = ed.value;
+        let fits = true;
+        try {
+          JSON.parse(now.slice(0, ed.selectionStart) + text + now.slice(ed.selectionEnd));
+        } catch (err) {
+          fits = false;
+        }
+        if (!fits) whole = over = true;
+      }
+      if (whole) text = JSON.stringify(value, null, 2);
+      if (text === raw) {
+        // Pasted as it is - a whole journey still seen from its start, not its last line.
+        if (whole) tab.setTimeout(toStart, 0);
+        return;
+      }
+      e.preventDefault();
+      put(text, whole ? 0 : ed.selectionStart, whole ? ed.value.length : ed.selectionEnd);
+      if (whole) toStart();
+      clearTimeout(timer);
+      const r = check();
+      const notes = [];
+      if (over) notes.push('pasted over the whole text - Ctrl+Z brings the one before back');
+      if (cleaned) notes.push('pasted with ' + cleaned + ' invisible character' + (cleaned === 1 ? '' : 's') + ' between the values cleaned');
+      if (r.ok && notes.length) setStatus(status.textContent + ' · ' + notes.join(' · '), false);
+    });
 
     tab.addEventListener('beforeunload', (e) => {
       if (ed.value !== original) {
@@ -464,8 +640,13 @@
     get('fmt').addEventListener('click', (e) => {
       const r = check();
       if (r.ok) {
-        ed.value = JSON.stringify(r.parsed, null, 2);
-        check();
+        const text = JSON.stringify(r.parsed, null, 2);
+        // Laid out anew: seen from its start (one line thousands of characters long leaves the view far to the right).
+        if (text !== ed.value) {
+          ed.value = text;
+          toStart();
+          check();
+        }
       }
       flash(e.currentTarget, r.ok ? 'Formatted' : 'Invalid JSON', r.ok);
     });

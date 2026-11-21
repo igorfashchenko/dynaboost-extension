@@ -328,7 +328,9 @@
       let h = '';
       let g = '';
       for (let i = first; i < last; i++) {
-        h += lineHtml(next(rows[i].replace(/\r$/, ''), starts[i]).parts) + '\n';
+        const row = rows[i].replace(/\r$/, '');
+        // A very long line is drawn plain, as in lines(): coloured, it is thousands of pieces the browser lays out anew at every key and every scroll.
+        h += lineHtml(row.length > LONG_LINE ? [['', row]] : next(row, starts[i]).parts) + '\n';
         g += '<div' + (i === curLine ? ' class="on"' : '') + '>' + (i + 1) + '</div>';
       }
       hl.innerHTML = h;
@@ -443,7 +445,7 @@
   const MARK_URL = 'url("data:image/svg+xml,' + encodeURIComponent(MARK_SVG) + '")';
 
   /* Appended to each tab's <style> after its own rules: the shared header -
-   * white band, gold rule, title, crumbs, the mark. */
+   * white band, gold rule, title, crumbs, the mark on the rule. */
   // What the table cannot say: colours with transparency.
   const DARK_EXTRA =
     'html.db-dark .cx textarea.cx-ta::selection{background:rgba(38,79,120,.85)}' +
@@ -456,8 +458,10 @@
   const TAB_CSS =
     'header{position:relative;overflow:hidden;background:var(--dbc-bg-fff);border-bottom:2px solid var(--dbc-bd-e3b04b)}' +
     'header>*{position:relative;z-index:1}' +
-    'header::after{content:"";position:absolute;z-index:0;right:-26px;top:-22px;width:290px;height:180px;' +
-    'background:' + MARK_URL + ' no-repeat right top/contain;opacity:.45;pointer-events:none}' +
+    // The mark stands on the gold line - its golden rectangle's foot on it -
+    // in every tab, however tall the header: the same cut everywhere.
+    'header::after{content:"";position:absolute;z-index:0;right:-26px;bottom:-1px;width:290px;height:180px;' +
+    'background:' + MARK_URL + ' no-repeat right bottom/contain;opacity:.45;pointer-events:none}' +
     'header h1{margin:0;font-size:20px;font-weight:600;line-height:1.3;color:var(--dbc-fg-10224e)}' +
     'header .crumbs{margin-top:3px;font-size:13px;color:var(--dbc-fg-56637f)}' +
     // Top right of the header: Report a bug and Suggest an idea as two small

@@ -15,6 +15,11 @@
  * with unsaved changes is never cleared at once: the window asks first.
  * The clearing itself is the browser's (browsingData, in background.js),
  * for this environment's address only.
+ *
+ * God mode on: switched off before the page reloads, and said so - before
+ * the reload and after it. A page that loads with nothing kept in the
+ * browser runs its form scripts late, after God mode has opened the form,
+ * and they lock again what it opened.
  */
 (function () {
   const ICON =
@@ -28,7 +33,7 @@
   const KINDS = [
     { id: 'data', name: 'Saved forms and data', tech: 'IndexedDB', what: 'Forms, views, menus and lists as the site keeps them between visits - where an old version after a change usually comes from.' },
     { id: 'local', name: 'Page settings', tech: 'local storage', what: 'What the pages remember between visits - views and panels last used, small choices.' },
-    { id: 'session', name: 'This tab’s memory', tech: 'session storage', what: 'What this tab keeps until it closes.' },
+    { id: 'session', name: 'This tab’s memory', tech: 'session storage', what: 'What this tab keeps until it closes. Page settings empties it too.' },
     { id: 'files', name: 'Downloaded files', tech: 'cache', what: 'Scripts, styles and images the browser and the page keep - downloaded again.' },
     { id: 'workers', name: 'Background helpers', tech: 'service workers', what: 'Taken off - the page puts back what it needs as it loads.' }
   ];
@@ -90,24 +95,58 @@
 
   const mb = (bytes) => (bytes >= 1048576 ? (bytes / 1048576).toFixed(bytes >= 10485760 ? 0 : 1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB');
 
-  // A record form with unsaved changes - they would go with the reload.
+  // A record form with unsaved changes - they would go with the reload:
+  // null, or the labels of the columns changed (a form script that sets a
+  // value on load makes them too).
   async function unsaved() {
-    if (DynaBoost.page().type !== 'entityrecord' || !DynaBoost.formDump || !DynaBoost.formDump.context) return false;
+    if (DynaBoost.page().type !== 'entityrecord' || !DynaBoost.formDump || !DynaBoost.formDump.context) return null;
     try {
       const ctx = await DynaBoost.formDump.context(1500);
-      return !!(ctx && ctx.unsaved);
+      const changed = (ctx && Array.isArray(ctx.changed) ? ctx.changed : []).filter((x) => typeof x === 'string' && x);
+      return ctx && (ctx.unsaved || changed.length) ? { changed: changed } : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Why the window is there, and what would be lost.
+  function warnHtml(dirty, stopped) {
+    const shown = dirty.changed.slice(0, 5).map((x) => '<b>' + esc(x) + '</b>').join(', ');
+    const more = dirty.changed.length > 5 ? ' and ' + (dirty.changed.length - 5) + ' more' : '';
+    return (
+      (stopped ? '<b>Not cleared at once</b> - this' : 'This') +
+      ' form has unsaved changes' + (shown ? ' (' + shown + more + ')' : '') +
+      ' - they are lost when the page reloads. Save the record first, or clear anyway.'
+    );
+  }
+
+  // God mode was switched off for a clearing: said again once the page is back (this tab's memory outlives the reload).
+  const GOD_NOTE = 'dynaboost.clearedGodOff';
+  const GOD_OFF = 'God mode is switched off - a page loading anew runs its scripts after it. Switch it on again once the form is there.';
+
+  function godOff() {
+    try {
+      if (!DynaBoost.isOn('god-mode')) return false;
+      DynaBoost.toggle('god-mode');
+      return true;
     } catch (e) {
       return false;
     }
   }
 
   async function clean(what) {
+    const god = godOff();
     if (what.includes('session')) {
       try {
         sessionStorage.clear();
       } catch (e) {
         /* nothing kept */
       }
+    }
+    if (god) {
+      DynaBoost.toast('Clearing cache', GOD_OFF);
+      // Kept by the extension: clearing Page settings empties this tab's session storage too.
+      await chrome.storage.local.set({ [GOD_NOTE]: { host: location.host, at: Date.now() } }).catch(() => {});
     }
     DynaBoost.saved('clear-cache');
     // The background clears this address's data and reloads the tab.
@@ -119,8 +158,10 @@
 
   let closeDialog = null;
 
-  async function openDialog() {
+  // dirty: the form's unsaved changes, when clearing at once stopped on them.
+  async function openDialog(dirty) {
     if (closeDialog) return;
+    const stopped = !!(dirty && dirty.changed);
     DynaBoost.closePanel();
     const now = await choice();
     const overlay = document.createElement('div');
@@ -129,7 +170,7 @@
       '<div class="db-dialog db-cc" role="dialog" aria-label="Clear cache">' +
       '<div class="db-dialog-head"><span>Clear cache</span><button type="button" data-db="close" aria-label="Close">✕</button></div>' +
       '<div class="db-cc-where">What <b>' + esc(location.hostname) + '</b> keeps in this browser<span data-db="size"></span></div>' +
-      '<div class="db-cc-warn" data-db="warn" hidden>This form has unsaved changes - they are lost when the page reloads.</div>' +
+      '<div class="db-cc-warn" data-db="warn"' + (stopped ? '>' + warnHtml(dirty, true) : ' hidden>') + '</div>' +
       '<div class="db-cc-list">' +
       KINDS.map(
         (k) =>
@@ -203,23 +244,28 @@
       }
       close();
     });
-    q('go').focus();
+    // Unsaved changes: Enter does not lose them.
+    (stopped ? q('cancel') : q('go')).focus();
 
     measure().then((m) => {
       if (!overlay.isConnected) return;
       for (const k of ALL) if (m[k]) overlay.querySelector('[data-n="' + k + '"]').textContent = m[k];
       if (m.size) q('size').textContent = ' - about ' + mb(m.size);
     });
-    unsaved().then((dirty) => {
-      if (overlay.isConnected && dirty) q('warn').hidden = false;
-    });
+    if (!stopped)
+      unsaved().then((d) => {
+        if (!overlay.isConnected || !d) return;
+        q('warn').innerHTML = warnHtml(d, false);
+        q('warn').hidden = false;
+      });
   }
 
   async function run() {
     const now = await choice();
     if (!now.set || now.ask || !now.what.length) return openDialog();
     // At once - unless the form has changes the reload would lose.
-    if (await unsaved()) return openDialog();
+    const dirty = await unsaved();
+    if (dirty) return openDialog(dirty);
     DynaBoost.closePanel();
     try {
       await clean(now.what);
@@ -227,6 +273,29 @@
       DynaBoost.toast('Not cleared', String((e && e.message) || e), true);
     }
   }
+
+  /* Back after a clearing that switched God mode off: said once the page is
+   * up - Dynamics writes its page anew as it starts, a message shown before
+   * that would go with it. */
+  async function sayGodOff() {
+    let note = null;
+    try {
+      note = (await chrome.storage.local.get(GOD_NOTE))[GOD_NOTE];
+    } catch (e) {
+      return;
+    }
+    if (!note || note.host !== location.host) return;
+    chrome.storage.local.remove(GOD_NOTE).catch(() => {});
+    // Not a mark left by a clearing that never came back.
+    if (!note.at || Date.now() - note.at > 120000) return;
+    let tries = 0;
+    const wait = setInterval(() => {
+      if (++tries < 120 && (document.readyState !== 'complete' || !document.body)) return;
+      clearInterval(wait);
+      setTimeout(() => DynaBoost.toast('Cache cleared', GOD_OFF), 1500);
+    }, 500);
+  }
+  if (window.top === window && !DynaBoost.off) sayGodOff();
 
   DynaBoost.register({
     id: 'clear-cache',

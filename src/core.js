@@ -50,6 +50,7 @@
 
   const STORAGE_KEY = 'dynaboost.features';
   const SHOW_ALL_KEY = 'dynaboost.showAll';
+  const VIEW_KEY = 'dynaboost.view'; // 'list': the tools as a compact list, not tiles - every site, every tab
   const THEME_KEY = 'dynaboost.theme'; // { mode, browser }: the header button's choice, and the browser's mode it was made in
   const HELP_TILES_KEY = 'dynaboost.helpTiles'; // the tiles' names and icons, for the help page
   const FOLDED_KEY = 'dynaboost.folded'; // the names of the sections folded shut, on every site
@@ -188,6 +189,7 @@
   const state = Object.create(null); // id -> boolean
   const pageState = Object.create(null); // id -> boolean, for session toggles - never stored
   let showAll = false;
+  let listView = false; // the footer's switch beside the pencil - see setView()
   let layout = { groups: [], tiles: [] }; // this site's order - see "arranging"
   let layouts = {}; // every site's
   let foldedGroups = new Set(); // section names - see foldHead()
@@ -229,6 +231,8 @@
    *                                   the tile's corner - shown when the
    *                                   pointer is on the tile - opens them
    * @param {string} [feature.settingsHint] the pencil's tooltip
+   * @param {boolean}  [feature.preview]   a tool still being tried: Preview on
+   *                                   its tile, and in its tooltip
    * @param {boolean}  [feature.panelResult] actions only: the panel stays open
    *                                        and onRun(ui) answers in it, in a
    *                                        card that folds down under the
@@ -372,6 +376,24 @@
     } else {
       send({ type: 'DB_FRAME_RUN', id: feature.id, frameId: framed.get(feature.id) }).catch(() => {});
     }
+  }
+
+  /* Tiles, or a compact list: every tool a row of the same height - its icon,
+   * its name on up to two lines, its switch or pencil on the right - two to a
+   * line. One choice for every site and tab (dynaboost.view). */
+  function setView(list) {
+    if (listView === !!list) return;
+    listView = !!list;
+    store({ [VIEW_KEY]: listView ? 'list' : null });
+    applyView();
+  }
+  function applyView() {
+    if (!root || !refs) return;
+    root.classList.toggle('db-list', listView);
+    refs.view.querySelector('.db-view-tiles').setAttribute('aria-pressed', String(!listView));
+    refs.view.querySelector('.db-view-list').setAttribute('aria-pressed', String(listView));
+    requestAnimationFrame(equalTiles);
+    if (tour) requestAnimationFrame(placeTip);
   }
 
   function setShowAll(value) {
@@ -799,20 +821,22 @@
    * gold NEW until each is used once. The steps are TOUR's - a few of the
    * release's tools; with TOUR.film the first card is the release's film on
    * YouTube (a picture drawn here, the video opens in a tab on a click), and
-   * Tour -> goes on to the tiles. */
+   * Tour -> goes on to the tiles. A step with spot shows a part of the panel
+   * that is not a tool (the footer's tiles / list switch), and wears no NEW. */
   const TOUR = {
-    v: '2.42',
+    v: '2.43',
     steps: [
-      { id: 'record-history', title: 'Record history', text: 'Every audited change of this record in one tab – who, when, each field’s old and new value.', where: 'Dynamics 365 · a record' },
-      { id: 'last-change', title: 'Last change', text: 'A switch: under every field label, its last change – old → new; click it for the field’s history.', where: 'Dynamics 365 · a record' },
-      { id: 'clear-cache', title: 'Clear cache', text: 'A form or list still showing its old version? What this site keeps in the browser, cleared and reloaded – never cookies.', where: 'every site' },
-      { id: 'component-names', title: 'Component names', text: 'A switch: in the form designer a tab, section or subgrid takes its name from its label – sec_report_parameters.', where: 'Power Apps · the form designer' }
+      { id: 'tiles-list', spot: '.db-view', title: 'Tiles or a compact list', text: 'Beside the pencil: the tools as tiles, or as a compact list two to a line – a long page of tools fits without scrolling. One choice for every site and tab.' },
+      { id: 'plugin-traces', title: 'Plugin traces · Preview', text: 'Why a save failed: the plug-in trace log by execution – every step in order with its time, the error on top in plain words. Our first preview, made at the request of fellow developers, for developers: tell us what works and what is missing – Report a bug or Suggest an idea, Plugin traces is first on the list.', where: 'Dynamics 365 · any page of an app' },
+      { id: 'view-columns', title: 'Copy view columns', text: 'A table’s views made alike in one go: one view’s columns, order and widths on the others – Same columns or Add missing, with or without its filter – previewed, with Versions and Undo.', where: 'Power Apps · a table or a view’s designer' },
+      { id: 'copy-code', title: 'Copy code button', text: 'A switch in Automatic: a web resource you edit gets a Copy code button over its Code box – the whole code on the clipboard in one click.', where: 'Power Apps · a web resource you edit' },
+      { id: 'copy-choices', title: 'Copy choices button', text: 'A switch in Automatic: a choice gets a Copy choices button before Sort – number, label and value, as a table that pastes into Excel.', where: 'Power Apps · a choice or a choice column' }
     ],
     // On the last step, a gold card: how many more the release has (its What's
     // new entry, less the tour's tools and the tour itself), a few of them.
-    more: { n: 8, chips: ['Form as JSON · Filter, Edit', 'Export run · Files', 'God mode stays on'], rest: '+ fixes' },
+    more: { n: 5, chips: ['Export run', 'Copy work item', 'Edit journey', 'Clear cache'], rest: '+ fixes' },
     // The release's film (help.js FILMS lists them all): its link and length.
-    film: { url: 'https://youtu.be/YfL8spDGdVI', len: '1:32' }
+    film: { url: 'https://youtu.be/UfgqoU8N6EA', len: '2:35' }
   };
   // The tour and its NEW live on main only - premain is for work, not for
   // being shown what is new. Released: on.
@@ -821,7 +845,7 @@
   let tourNew = new Set(); // tiles wearing NEW
   let tour = null; // { at, tip } while shown
 
-  const tourTiles = () => TOUR.steps.filter((st) => features.some((f) => f.id === st.id));
+  const tourTiles = () => TOUR.steps.filter((st) => st.spot || features.some((f) => f.id === st.id));
   const tourSteps = () => {
     const tiles = tourTiles();
     return TOUR.film && tiles.length ? [{ film: TOUR.film }].concat(tiles) : tiles;
@@ -838,7 +862,7 @@
     tour = { at: 0, tip: null };
     // NEW on the tour's tiles, for this version, until each is used.
     if (!tourNew.size) {
-      tourNew = new Set(tourTiles().map((st) => st.id));
+      tourNew = new Set(tourTiles().filter((st) => !st.spot).map((st) => st.id));
       store({ [TOUR_NEW_KEY]: { v: TOUR.v, ids: Array.from(tourNew) } });
     }
     refs.mid.addEventListener('scroll', placeTip, { passive: true });
@@ -854,7 +878,8 @@
     const steps = tourSteps();
     const last = at === steps.length - 1;
     refs.panel.classList.add('db-touring');
-    refs.body.querySelectorAll('.db-tour-spot').forEach((t) => t.classList.remove('db-tour-spot', 'db-tour-off'));
+    // The panel's, not only the tiles': a step may light the footer's switch.
+    refs.panel.querySelectorAll('.db-tour-spot').forEach((t) => t.classList.remove('db-tour-spot', 'db-tour-off'));
     let dim = refs.panel.querySelector('.db-tour-dim');
     if (!dim) refs.panel.appendChild((dim = el('div', 'db-tour-dim')));
     if (tour.tip) tour.tip.remove();
@@ -865,11 +890,12 @@
     if (st.film) return showFilm(tip, st.film, dots);
     const lead = steps[0].film ? 1 : 0; // the film card is not one of the new tools
     const kick = '<div class="db-tour-k">New in ' + TOUR.v + ' · ' + (at + 1 - lead) + ' of ' + (steps.length - lead) + '</div>';
-    const here = usable(features.find((x) => x.id === st.id));
-    const tile = refs.body.querySelector('.db-tile[data-db-id="' + st.id + '"]');
+    const here = st.spot ? true : usable(features.find((x) => x.id === st.id));
+    const tile = st.spot ? refs.panel.querySelector(st.spot) : refs.body.querySelector('.db-tile[data-db-id="' + st.id + '"]');
     if (tile) {
       tile.classList.add('db-tour-spot');
-      if (!here) tile.classList.add('db-tour-off');
+      // A tool of another page is lit as any other (panel.css) - no class of its own: 2.42's stylesheet, still in a
+      // tab open across the update, would draw its old grey and dashed look on one.
       tile.scrollIntoView({ block: 'center' });
     }
     tip.innerHTML =
@@ -978,6 +1004,7 @@
     if (refs) {
       refs.mid.removeEventListener('scroll', placeTip);
       refs.panel.classList.remove('db-touring');
+      refs.panel.querySelectorAll('.db-tour-spot').forEach((t) => t.classList.remove('db-tour-spot', 'db-tour-off'));
       const dim = refs.panel.querySelector('.db-tour-dim');
       if (dim) dim.remove();
       render();
@@ -1083,7 +1110,25 @@
     const done = el('button', 'db-arrange-done', 'Done');
     done.type = 'button';
     done.addEventListener('click', () => setArranging(false));
-    foot.append(thanks.button, reset, arrange, scope, done);
+    // The pencil and, beside it in one capsule, the tools as tiles or as a
+    // compact list - how the panel looks, in one place.
+    const view = el('span', 'db-view');
+    view.setAttribute('role', 'group');
+    view.setAttribute('aria-label', 'Arrange the panel, show the tools as tiles or a list');
+    view.append(arrange, el('span', 'db-view-sep'));
+    for (const [kind, title, svg] of [
+      ['tiles', 'Tiles', VIEW_TILES_SVG],
+      ['list', 'Compact list', VIEW_LIST_SVG]
+    ]) {
+      const b = el('button', 'db-view-' + kind);
+      b.type = 'button';
+      b.innerHTML = svg;
+      b.title = title;
+      b.setAttribute('aria-label', title);
+      b.addEventListener('click', () => setView(kind === 'list'));
+      view.appendChild(b);
+    }
+    foot.append(thanks.button, reset, view, scope, done);
 
     // Between the header and the footer one area scrolls: the sections, the
     // tiles and the cards that fold down under them (an action's answer, Say
@@ -1107,7 +1152,7 @@
     panel.addEventListener('pointercancel', (e) => dragEnd(e, true));
     panel.addEventListener('lostpointercapture', (e) => dragEnd(e, false));
 
-    return { panel, info: infoBtn, top, body, mid, foot, scope, arrange, reset, ctx, ctxKind, ctxId, ctxSub, ctxCopy, theme: themeBtn, thanksBtn: thanks.button, saved: savedClock };
+    return { panel, info: infoBtn, top, body, mid, foot, scope, arrange, reset, view, ctx, ctxKind, ctxId, ctxSub, ctxCopy, theme: themeBtn, thanksBtn: thanks.button, saved: savedClock };
   }
 
   const HEART_SVG =
@@ -1143,6 +1188,14 @@
     '<rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/>' +
     '<path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>' +
     '</svg>';
+  // The view switch's two marks: four squares, three bars - drawn on the same
+  // 16 px square so both sit in the middle of their halves.
+  const VIEW_TILES_SVG =
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1.2" fill="currentColor"/><rect x="9" y="2" width="5" height="5" rx="1.2" fill="currentColor"/>' +
+    '<rect x="2" y="9" width="5" height="5" rx="1.2" fill="currentColor"/><rect x="9" y="9" width="5" height="5" rx="1.2" fill="currentColor"/></svg>';
+  const VIEW_LIST_SVG =
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="2.6" rx="1.1" fill="currentColor"/><rect x="2" y="6.7" width="12" height="2.6" rx="1.1" fill="currentColor"/>' +
+    '<rect x="2" y="10.9" width="12" height="2.6" rx="1.1" fill="currentColor"/></svg>';
   const PENCIL_SVG =
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
     '<path d="M4.5 19.5 5.4 15.3 15.6 5.1a2.1 2.1 0 0 1 3 0l.3.3a2.1 2.1 0 0 1 0 3L8.7 18.6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>' +
@@ -1506,6 +1559,7 @@
   function ensureShell() {
     if (refs || retired) return;
     refs = buildShell();
+    applyView();
     watchTileWidth();
     markThanks();
     markInfo();
@@ -1616,9 +1670,10 @@
     }
 
     refs.scope.textContent = showAll
-      ? 'This page only'
+      ? 'Show less'
       : 'Show all (' + elsewhere.length + ')';
-    refs.scope.style.display = elsewhere.length || showAll ? '' : 'none';
+    // Nothing to show elsewhere: it stays, unseen, so the capsule keeps its place.
+    refs.scope.style.visibility = elsewhere.length || showAll ? '' : 'hidden';
     equalTiles();
   }
 
@@ -1668,8 +1723,9 @@
     refs.body.querySelectorAll('.db-tile-name').forEach((n) => {
       n.style.removeProperty('font-size');
       for (const size of [11.5, 11]) {
-        const line = parseFloat(getComputedStyle(n).fontSize) * 1.25;
-        if (!line || n.offsetHeight <= line * 2 + 1) break;
+        const line = parseFloat(getComputedStyle(n).fontSize) * (listView ? 1.2 : 1.25);
+        // the list cuts a name at two lines: its whole height is scrollHeight
+        if (!line || (listView ? n.scrollHeight : n.offsetHeight) <= line * 2 + 1) break;
         n.style.fontSize = size + 'px';
       }
     });
@@ -1703,6 +1759,11 @@
 
     tile.appendChild(el('span', 'db-tile-name', feature.name));
     if (tourNew.has(feature.id) && !arranging) tile.appendChild(el('span', 'db-tile-new', 'NEW'));
+    // A tool still being tried: Preview in its corner, and said in its tooltip.
+    if (feature.preview && !arranging) {
+      tile.appendChild(el('span', 'db-tile-preview', 'Preview'));
+      tile.title += ' · Preview: still being tried - tell us what you think';
+    }
 
     if (feature.type === 'toggle') tile.setAttribute('aria-pressed', String(here && isOn(feature.id)));
     // A tool's settings: the pencil in its corner, there while the pointer is
@@ -1733,7 +1794,8 @@
       tile.setAttribute('aria-label', feature.name + ' - arrow keys move it within ' + group);
       tile.addEventListener('pointerdown', (e) => grab(e, tile));
       tile.addEventListener('keydown', (e) => {
-        const by = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -3, ArrowDown: 3 }[e.key];
+        const cols = listView ? 2 : 3; // a row of the grid, as drawn
+        const by = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols }[e.key];
         if (!by) return;
         e.preventDefault();
         nudge(tile, by);
@@ -2457,6 +2519,15 @@
     queueRender();
   });
 
+  // Tiles or the list, picked in another tab.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes[VIEW_KEY]) return;
+    const next = changes[VIEW_KEY].newValue === 'list';
+    if (next === listView) return;
+    listView = next;
+    applyView();
+  });
+
   // A section folded in another tab.
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes[FOLDED_KEY]) return;
@@ -2565,7 +2636,7 @@
   // The NEW of this version's tour only.
   const readTourNew = (v) => new Set(v && v.v === TOUR.v && Array.isArray(v.ids) ? v.ids : []);
 
-  chrome.storage.local.get([STORAGE_KEY, SHOW_ALL_KEY, THEME_KEY, USE_KEY, SAVED_KEY, SAVED_SEEN_KEY, LAYOUT_KEY, NEWS_KEY, FOLDED_KEY, TOUR_KEY, TOUR_NEW_KEY], (data) => {
+  chrome.storage.local.get([STORAGE_KEY, SHOW_ALL_KEY, VIEW_KEY, THEME_KEY, USE_KEY, SAVED_KEY, SAVED_SEEN_KEY, LAYOUT_KEY, NEWS_KEY, FOLDED_KEY, TOUR_KEY, TOUR_NEW_KEY], (data) => {
     Object.assign(state, (data && data[STORAGE_KEY]) || {});
     tourDue = TOUR_ON ? (data && data[TOUR_KEY]) || null : null;
     tourNew = TOUR_ON ? readTourNew(data && data[TOUR_NEW_KEY]) : new Set();
@@ -2585,6 +2656,8 @@
     }
     markThanks();
     showAll = !!(data && data[SHOW_ALL_KEY]);
+    listView = !!(data && data[VIEW_KEY] === 'list');
+    applyView();
     theme = readTheme(data && data[THEME_KEY]);
     dropStaleTheme();
     applyTheme();

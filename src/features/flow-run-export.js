@@ -470,6 +470,39 @@
     };
   }
 
+  /* A row or a file touched by a step: one line for the action and what it
+   * did to it, whatever iteration it ran in - Apply to each over eight rows
+   * is one line with its eight iterations, not eight lines. byName: the
+   * steps by their name (an iteration's action is "Name #2 › 3"). */
+  function touch(how, byName, name, role) {
+    const st = byName.get(name);
+    const step = (st && st.key) || name;
+    let h = how.find((x) => x.step === step && x.how === role);
+    if (!h) how.push((h = { step: step, how: role }));
+    if (st && st.at && st.at.li !== undefined) {
+      h.its = h.its || [];
+      if (!h.its.some((x) => x.li === st.at.li && x.it === st.at.it)) h.its.push({ label: String(st.itLabel), li: st.at.li, it: st.at.it });
+    }
+    return h;
+  }
+  // 1, 2, 3, 5 as "1–3, 5"; nested ones (2 › 3) as they are, the first few.
+  function itsText(its) {
+    const labels = its.map((x) => x.label);
+    if (labels.length === 1) return '#' + labels[0];
+    if (labels.every((l) => /^\d+$/.test(l))) {
+      const n = labels.map(Number).sort((a, b) => a - b);
+      const out = [];
+      for (let i = 0; i < n.length; i++) {
+        let j = i;
+        while (j + 1 < n.length && n[j + 1] === n[j] + 1) j++;
+        out.push(j > i ? n[i] + '–' + n[j] : String(n[i]));
+        i = j;
+      }
+      return '#' + out.join(', ');
+    }
+    return labels.slice(0, 4).map((l) => '#' + l).join(', ') + (labels.length > 4 ? ' +' + (labels.length - 4) : '');
+  }
+
   // ---------- the records a run touched ----------
 
   /* Every Dataverse record the run read, created, changed or pointed at,
@@ -519,6 +552,7 @@
   }
 
   function findRecords(steps) {
+    const byName = new Map(steps.map((x) => [x.name, x]));
     const found = new Map(); // table:id -> record
     const known = Object.create(null); // entity set -> table, as seen
     let host = '';
@@ -534,8 +568,7 @@
       }
       if (!rec.name && r.name) rec.name = r.name;
       if (!rec.host && r.host) rec.host = r.host;
-      const how = role + (r.via ? ' · ' + r.via : '');
-      if (!rec.how.some((h) => h.step === step && h.how === how)) rec.how.push({ step: step, how: how });
+      touch(rec.how, byName, step, role + (r.via ? ' · ' + r.via : ''));
     };
 
     // One row of a table, from what it carries about itself.
@@ -626,7 +659,7 @@
         .filter((k) => /^item\//i.test(k))
         .map((k) => k.slice(5).replace(/@odata\.bind$/i, ''));
       if (cols.length && /^(Created|Updated)$/.test(role)) {
-        for (const rec of found.values()) for (const h of rec.how) if (h.step === s.name && h.how === role) h.cols = cols;
+        for (const rec of found.values()) for (const h of rec.how) if (h.step === (s.key || s.name) && h.how === role) h.cols = cols;
       }
     }
     // An action's table and id came before the run showed its table name.
@@ -694,14 +727,63 @@
     return rec;
   }
 
+  /* A file by its address alone - a connector that saves the file itself and
+   * answers with where (a document generator), a record's column that holds
+   * it. A whole value only, in SharePoint or OneDrive, a file with its
+   * extension: pages, sharing links and the APIs are not files. */
+  // Spaces as they are too: a generator answers with the name as it is.
+  const FILE_URL = /^https:\/\/([a-z0-9-]+)\.sharepoint\.com(\/[^?#\r\n\t"'<>]+)(?:[?#][^\s"'<>]*)?$/i;
+  const NOT_FILE = /\/(_layouts|_api|_vti_bin|_catalogs)\/|\/:[a-z]:\/|\.(aspx|ashx|asmx|svc|axd)$/i;
+  function fileAt(url) {
+    const m = FILE_URL.exec(url.trim());
+    if (!m || NOT_FILE.test(m[2])) return null;
+    let path;
+    try {
+      path = decodeURIComponent(m[2]);
+    } catch (e) {
+      return null;
+    }
+    if (!/\/[^/]+\.[a-z0-9]{1,6}$/i.test(path)) return null;
+    const top = /^\/(sites|teams|personal)\/[^/]+/i.exec(path);
+    return {
+      service: /-my$/i.test(m[1]) ? 'OneDrive' : 'SharePoint',
+      site: 'https://' + m[1].toLowerCase() + '.sharepoint.com' + (top ? top[0] : ''),
+      path: top ? path.slice(top[0].length) : path
+    };
+  }
+  function urlsIn(v, depth, out) {
+    if (v == null || depth > 8 || out.length >= MAX_FILES) return out;
+    if (typeof v === 'string') {
+      if (v.length < 2048 && /^\s*https:\/\/[a-z0-9-]+\.sharepoint\.com\//i.test(v)) {
+        const f = fileAt(v);
+        if (f) out.push(f);
+      }
+    } else if (Array.isArray(v)) {
+      v.slice(0, MAX_PER_LIST).forEach((x) => urlsIn(x, depth + 1, out));
+    } else if (typeof v === 'object') {
+      // {Link}: SharePoint's own file properties, which walk() reads.
+      for (const k of Object.keys(v)) if (k !== '$content' && k !== 'headers' && k !== 'host' && k !== '{Link}') urlsIn(v[k], depth + 1, out);
+    }
+    return out;
+  }
+  const RECORD_WRITE = /^(CreateRecord|UpdateRecord|UpdateOnlyRecord|UpsertRecord)$/;
+
   function findFiles(steps) {
     const found = new Map();
 
+    const keyOf = (f) => {
+      const path = f.path ? '/' + f.path.replace(/^\/+/, '') : '';
+      // Its whole address where the site is known: a subsite given as the
+      // site or found in the path is the same file.
+      if (f.site && path) return (f.site.replace(/\/+$/, '') + path).toLowerCase();
+      return (f.site || f.service).toLowerCase().replace(/\/+$/, '') + '|' + (path || f.name || '').toLowerCase();
+    };
+    const byNameF = new Map(steps.map((x) => [x.name, x]));
     const add = (f, step, role) => {
       const path = f.path ? '/' + f.path.replace(/^\/+/, '') : '';
       const name = f.name || (path ? path.split('/').pop() : '');
       if (!name || /_\.000$/.test(name)) return; // a list item, not a file
-      const key = (f.site || f.service).toLowerCase().replace(/\/+$/, '') + '|' + (path || name).toLowerCase();
+      const key = keyOf(f);
       let file = found.get(key);
       if (!file) {
         if (found.size >= MAX_FILES) return;
@@ -713,7 +795,7 @@
       if (!file.size && f.size > 0) file.size = f.size;
       if (!file.link && f.link && SAFE_URL.test(f.link)) file.link = f.link;
       if (role === 'Deleted') file.deleted = true;
-      if (!file.how.some((h) => h.step === step && h.how === role)) file.how.push({ step: step, how: role });
+      touch(file.how, byNameF, step, role);
     };
 
     // A file's metadata as the connectors give it - CreateFile, Get file
@@ -752,11 +834,22 @@
       } else {
         walk(body, s.name, role, { service: service || 'SharePoint', site: typeof par.dataset === 'string' ? par.dataset : '' }, 0);
       }
+      // Any other step: a file's address in what it was given - written to a
+      // record, or given - and in its answer.
+      if (!service) {
+        const given = new Set();
+        const into = s.kind === 'Trigger' ? 'Trigger' : conn === 'commondataserviceforapps' && RECORD_WRITE.test(op) ? 'Linked' : 'Given';
+        for (const f of urlsIn(s.inputs, 0, [])) {
+          given.add(keyOf(f));
+          add(f, s.name, into);
+        }
+        for (const f of urlsIn(s.outputs, 0, [])) if (!given.has(keyOf(f))) add(f, s.name, s.kind === 'Trigger' ? 'Trigger' : 'Returned');
+      }
     }
 
     const files = Array.from(found.values());
     for (const f of files) {
-      if (f.service === 'SharePoint' && f.site && f.path) {
+      if ((f.service === 'SharePoint' || f.service === 'OneDrive') && f.site && f.path) {
         if (!f.link && !f.deleted) f.link = f.site + encPath(f.path) + (OFFICE_EXT.test(f.name) ? '?web=1' : '');
         const dir = f.path.slice(0, f.path.lastIndexOf('/'));
         if (dir) f.folderLink = f.site + encPath(dir);
@@ -1071,13 +1164,20 @@
     return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
 
-  /* A file's content - base64 in $content, or the bytes of a .docx or .pdf
-   * read as text - says nothing in the tab or a copy and can be megabytes:
-   * its type and size stand in its place. */
+  /* A file's content - base64 in $content or under any other name (a
+   * document generator's "Document content"), or the bytes of a .docx or
+   * .pdf read as text - says nothing in the tab or a copy, can be megabytes
+   * and carries what the document says: its size stands in its place. */
   const BINARY = /[\u0000-\u0008\u000e-\u001f\ufffd]/g;
   const isBinary = (t) => t.length > 1000 && (/^(PK\u0003\u0004|%PDF-)/.test(t) || (t.slice(0, 2000).match(BINARY) || []).length > 20);
+  // Base64 breaks lines, never words: a long text with spaces stays as it is.
+  const isBase64 = (t) => t.length > 1000 && /^[A-Za-z0-9+/_-]+={0,2}$/.test(t.replace(/[\r\n]+/g, ''));
   function slim(v, depth) {
-    if (typeof v === 'string') return isBinary(v) ? '[file content left out - ' + sizeText(v.length) + ']' : v;
+    if (typeof v === 'string') {
+      if (isBinary(v)) return '[file content left out - ' + sizeText(v.length) + ']';
+      if (isBase64(v)) return '[file content left out - ' + sizeText(Math.floor((v.replace(/[\r\n=]+/g, '').length * 3) / 4)) + ']';
+      return v;
+    }
     if (!v || typeof v !== 'object' || depth > 12) return v;
     if (Array.isArray(v)) return v.map((x) => slim(x, depth + 1));
     if (typeof v.$content === 'string' && v.$content.length > 1000) {
@@ -1234,7 +1334,7 @@
   function stepsOf(ctx) {
     const list = ctx.top.map((s, i) => Object.assign({}, s, { key: s.name, at: { i: i } }));
     ctx.L.forEach((l, li) => {
-      for (const it of l.iterations) for (const a of it.actions) if (a.loaded) list.push(Object.assign({}, a, { key: a.name, name: a.name + ' #' + it.label, at: { li: li, it: it.key } }));
+      for (const it of l.iterations) for (const a of it.actions) if (a.loaded) list.push(Object.assign({}, a, { key: a.name, name: a.name + ' #' + it.label, itLabel: it.label, at: { li: li, it: it.key } }));
     });
     return list;
   }
@@ -1306,16 +1406,23 @@
   function placeOf(f) {
     const dir = f.path ? f.path.split('/').slice(1, -1) : [];
     let site = f.service;
-    if (f.site) {
+    if (f.site && f.service !== 'OneDrive') {
       const m = /^https:\/\/([^/]+)(?:\/(?:sites|teams)\/([^/]+))?/i.exec(f.site);
       if (m) site = m[2] ? decodeURIComponent(m[2]) : m[1];
     }
     return [site].concat(dir).join(' › ');
   }
 
-  function fileHtml(f) {
+  // The iterations a line stands for, after its step: ×8 · #1–8.
+  const itsHtml = (h) =>
+    h.its && h.its.length ? ' <span class="its" title="' + (h.its.length > 1 ? 'In ' + h.its.length + ' iterations of its loop' : 'In this iteration of its loop') + '">' + (h.its.length > 1 ? '×' + h.its.length + ' · ' : '') + esc(itsText(h.its)) + '</span>' : '';
+  /* The lines of a card: all of them - or, while Records shows one iteration
+   * (pick: { has(h) }), only what that iteration did. */
+  const linesOf = (x, pick) => (pick ? x.how.filter((h) => pick.has(h)) : x.how);
+
+  function fileHtml(f, pick) {
     const ext = /\.([a-z0-9]{1,5})$/i.exec(f.name);
-    const how = f.how.map((h) => esc(h.how) + ' <span class="step">' + nice(h.step) + '</span>').join('<br>');
+    const how = linesOf(f, pick).map((h) => esc(h.how) + ' <span class="step">' + nice(h.step) + '</span>' + (pick ? '' : itsHtml(h))).join('<br>');
     const name = f.link
       ? '<a class="fn" href="' + esc(f.link) + '" target="_blank" rel="noopener noreferrer" title="Open this file in ' + esc(f.service) + '">' + esc(f.name) + '<span class="fgo">↗</span></a>'
       : '<span class="nm" title="' + (f.deleted ? 'The run deleted this file' : f.service === 'OneDrive' ? 'The run does not carry the OneDrive’s address' : 'The run does not carry the file’s site') + '">' + esc(f.name) + '</span>';
@@ -1351,9 +1458,9 @@
     return t.length > 80 ? t.slice(0, 79) + '…' : t;
   };
 
-  function recordHtml(r) {
-    const how = r.how
-      .map((h) => '<span class="hw">' + esc(h.how) + ' <span class="step">' + nice(h.step) + '</span>' + (h.cols ? '<span class="cols">' + esc(h.cols.slice(0, 8).join(', ')) + (h.cols.length > 8 ? ' +' + (h.cols.length - 8) : '') + '</span>' : '') + '</span>')
+  function recordHtml(r, pick) {
+    const how = linesOf(r, pick)
+      .map((h) => '<span class="hw">' + esc(h.how) + ' <span class="step">' + nice(h.step) + '</span>' + (pick ? '' : itsHtml(h)) + (h.cols ? '<span class="cols">' + esc(h.cols.slice(0, 8).join(', ')) + (h.cols.length > 8 ? ' +' + (h.cols.length - 8) : '') + '</span>' : '') + '</span>')
       .join('');
     const inner =
       '<span class="ent">' + esc(r.entity) + '</span>' +
@@ -1425,11 +1532,57 @@
     );
   }
 
-  function asideHtml(t) {
+  /* Records and Files of the whole run - or of one iteration of a loop: the
+   * one picked in the run's strip (ctx.rec: { on, li }). The switch is there
+   * when a loop ran more than once. */
+  function recPick(ctx) {
+    const loops = ctx.L.map((l, li) => li).filter((li) => ctx.L[li].iterations.length > 1);
+    if (!loops.length) return null;
+    if (!ctx.rec) {
+      // At first the loop that ran most, an outer one before the loops inside it.
+      const first = loops.slice().sort((a, b) => !!ctx.L[a].outer - !!ctx.L[b].outer || ctx.L[b].iterations.length - ctx.L[a].iterations.length)[0];
+      ctx.rec = { on: false, li: first };
+    }
+    if (!loops.includes(ctx.rec.li)) ctx.rec.li = loops[0];
+    const li = ctx.rec.li;
+    const l = ctx.L[li];
+    const st = (ctx.state && ctx.state[li]) || {};
+    const cur = l.iterations.find((x) => x.key === st.cur) || l.iterations[0];
+    // A loop inside the picked one: its iterations of this one are "4 › 1", "4 › 2" ...
+    const inside = (other) => {
+      for (let x = ctx.L[other], i = 0; x && i < 20; i++) {
+        if (x === l) return true;
+        x = x.outer ? ctx.L.find((y) => y.name === x.outer) : null;
+      }
+      return false;
+    };
+    const has = (h) => !!h.its && h.its.some((x) => (x.li === li && x.it === cur.key) || (x.li !== li && inside(x.li) && String(x.label).indexOf(cur.label + ' › ') === 0));
+    return { loops: loops, li: li, loop: l, cur: cur, pos: l.iterations.indexOf(cur), on: ctx.rec.on, has: has };
+  }
+
+  function asideHtml(t, ctx) {
+    const pk = ctx ? recPick(ctx) : null;
+    const pick = pk && pk.on ? pk : null;
+    const records = pick ? t.records.filter((r) => r.how.some(pick.has)) : t.records;
+    const files = pick ? t.files.filter((f) => f.how.some(pick.has)) : t.files;
+    // Whole run or one iteration: the switch, and under it which one - stepped here or picked in the run.
+    const sw = pk
+      ? '<div class="rsw"><span class="rseg"><button data-rec="all" aria-pressed="' + !pk.on + '">Whole run</button><button data-rec="it" aria-pressed="' + pk.on + '" title="Only what one iteration of a loop touched">One iteration</button></span>' +
+        (pk.on
+          ? (pk.loops.length > 1
+              ? '<select data-rec-loop title="The loop">' + pk.loops.map((li) => '<option value="' + li + '"' + (li === pk.li ? ' selected' : '') + '>' + nice(ctx.L[li].name) + '</option>').join('') + '</select>'
+              : '<span class="rlp">' + nice(pk.loop.name) + '</span>') +
+            '<span class="rnav"><button data-rec="prev" title="Previous iteration"' + (pk.pos <= 0 ? ' disabled' : '') + '>‹</button><b>#' + esc(pk.cur.label) + '</b><i>of ' + pk.loop.iterations.length + '</i>' +
+            '<button data-rec="next" title="Next iteration"' + (pk.pos >= pk.loop.iterations.length - 1 ? ' disabled' : '') + '>›</button></span>'
+          : '') +
+        '</div>'
+      : '';
+    const none = pick ? '<div class="rh"><b>Records</b><span class="cnt">0</span></div><div class="none">Iteration #' + esc(pick.cur.label) + ' touched no Dataverse record' + (pick.cur.actions.some((a) => !a.loaded) ? ' read so far – its actions are still being read' : '') + '.</div>' : '';
     // What the run touched and did, beside the steps: each with a link.
     const html =
-      part('Records', t.records, recordHtml, 'Every row this run read, created, changed or pointed at – click to open it in Dynamics 365.') +
-      part('Files', t.files, fileHtml, 'Every file this run created, changed, copied or read – the name opens the file, the line under it its folder.') +
+      sw +
+      (part('Records', records, (r) => recordHtml(r, pick), pick ? 'What iteration #' + esc(pick.cur.label) + ' read, created, changed or pointed at.' : 'Every row this run read, created, changed or pointed at – click to open it in Dynamics 365.') || none) +
+      part('Files', files, (f) => fileHtml(f, pick), 'Every file this run created, changed, copied, read or named by its address – the name opens the file, the line under it its folder.') +
       part('Emails', t.emails, emailHtml) +
       part('Approvals', t.approvals, approvalHtml) +
       part('Child flows', t.children, (c) => childHtml(c, t.env)) +
@@ -1438,6 +1591,9 @@
       part('Slowest steps', t.slowest, slowHtml);
     return '<aside>' + (html || '<div class="rh"><b>Records</b><span class="cnt">0</span></div><div class="none">No Dataverse records or files in this run.</div>') + '</aside>';
   }
+
+  // A line as the JSON says it: the action, what it did, the iterations by their numbers.
+  const howJson = (h) => ({ step: h.step, how: h.how, cols: h.cols, iterations: h.its && h.its.length ? h.its.map((x) => x.label) : undefined });
 
   const flowNameOf = (run) => {
     const p = run.properties || {};
@@ -1490,7 +1646,7 @@
             skippedAfter: failure.skipped || undefined
           }
         : undefined,
-      records: touched.records.map((r) => ({ table: r.entity, id: r.id, name: r.name || undefined, url: r.host ? recordUrl(r) : undefined, steps: r.how })),
+      records: touched.records.map((r) => ({ table: r.entity, id: r.id, name: r.name || undefined, url: r.host ? recordUrl(r) : undefined, steps: r.how.map(howJson) })),
       files: touched.files.length
         ? touched.files.map((f) => ({
             name: f.name,
@@ -1500,7 +1656,7 @@
             size: f.size ? sizeText(f.size) : undefined,
             url: f.link || undefined,
             folder: f.folderLink || undefined,
-            steps: f.how
+            steps: f.how.map(howJson)
           }))
         : undefined,
       emails: touched.emails.length
@@ -1553,6 +1709,8 @@
   const SECRET_PARAM = /((?:^|[?&])([a-z_-]*(key|secret|token)|sig|signature|code|password)=)[^&#\s"]+/gim;
   const BEARER = /\b(Bearer|Basic)\s+[a-z0-9._~+/=-]{8,}/gi;
   const JWT = /\beyJ[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\.[a-z0-9_-]*/gi;
+  // A OneDrive's address names its owner: /personal/ada_example_com.
+  const ONEDRIVE_OWNER = /(-my\.sharepoint\.com\/personal\/)[^/?#\s"'<>]+/gi;
 
   function anonymised(payload) {
     const people = new Map();
@@ -1591,7 +1749,8 @@
         })
         .replace(SECRET_PARAM, '$1<removed>')
         .replace(BEARER, '$1 <removed>')
-        .replace(JWT, '<removed>');
+        .replace(JWT, '<removed>')
+        .replace(ONEDRIVE_OWNER, '$1<person>');
       return nameRe ? t.replace(nameRe, (m) => people.get(m)) : t;
     };
     const clean = (v, k, d) => {
@@ -1700,6 +1859,14 @@
       '.rh{display:flex;align-items:center;gap:8px;margin:0 2px 2px;font-size:15px}' +
       '.cnt{padding:0 7px;border-radius:9px;background:var(--dbc-bg-eef2f9);color:var(--dbc-fg-56637f);font-size:12px;font-weight:600}' +
       '.rsub{margin:0 2px 8px;font-size:12px;color:var(--dbc-fg-56637f)}' +
+      '.its{margin-left:4px;padding:0 6px;border-radius:8px;background:var(--dbc-bg-eef2f9);color:var(--dbc-fg-56637f);font-size:11px;font-weight:600;white-space:nowrap}' +
+      '.rsw{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin:0 2px 10px}' +
+      '.rseg{display:inline-flex;border:1px solid var(--dbc-bd-c6d0e4);border-radius:6px;overflow:hidden}' +
+      '.rsw button{padding:3px 9px;border:0;background:var(--dbc-bg-fff);color:var(--dbc-fg-10224e);font:inherit;font-size:12px;cursor:pointer}.rseg button+button{border-left:1px solid var(--dbc-bd-dde3f0)}' +
+      '.rseg button[aria-pressed="true"]{background:var(--dbc-bg-e9f1ff);color:var(--dbc-fg-1e6bff);font-weight:600}' +
+      '.rnav{display:inline-flex;align-items:center;gap:5px;font-size:12.5px}.rnav i{font-style:normal;color:var(--dbc-fg-56637f)}' +
+      '.rnav button{border:1px solid var(--dbc-bd-c6d0e4);border-radius:5px;padding:1px 8px;font-size:14px;line-height:1.3}.rnav button:disabled{opacity:.4;cursor:default}' +
+      '.rsw select{max-width:150px;padding:2px 4px;border:1px solid var(--dbc-bd-c6d0e4);border-radius:5px;background:var(--dbc-bg-fff);color:var(--dbc-fg-10224e);font:inherit;font-size:12px}.rlp{font-size:12px;color:var(--dbc-fg-56637f);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
       '.rec{position:relative;display:block;margin:0 0 6px;padding:8px 26px 8px 10px;border:1px solid var(--dbc-bd-dde3f0);border-radius:7px;color:inherit;text-decoration:none}' +
       'a.rec:hover{border-color:var(--dbc-bd-1e6bff);background:var(--dbc-bg-f5f7fc)}' +
       '.ent{display:inline-block;margin-right:6px;padding:0 7px;border-radius:9px;background:var(--dbc-bg-e9f1ff);color:var(--dbc-fg-1e6bff);font-size:11.5px;font-weight:600;vertical-align:1px}' +
@@ -1787,7 +1954,7 @@
       DynaBoost.tabCss +
       '</style>' +
       head +
-      '<div class="wrap"><main>' + rows + rest + '</main>' + asideHtml(touchedOf(ctx)) + '</div>'
+      '<div class="wrap"><main>' + rows + rest + '</main>' + asideHtml(touchedOf(ctx), ctx) + '</div>'
     );
   }
 
@@ -1858,10 +2025,19 @@
         const aside = doc.querySelector('aside');
         if (!aside || tab.closed) return;
         const top = aside.scrollTop;
-        aside.outerHTML = asideHtml(touchedOf(ctx));
+        aside.outerHTML = asideHtml(touchedOf(ctx), ctx);
         doc.querySelector('aside').scrollTop = top;
       }, 300);
     };
+    // At once: the iteration Records shows was changed.
+    const drawRecords = () => {
+      clearTimeout(recTimer);
+      recTimer = 0;
+      const aside = doc.querySelector('aside');
+      if (!aside || tab.closed) return;
+      aside.outerHTML = asideHtml(touchedOf(ctx), ctx);
+    };
+    const follows = (li) => !!(ctx.rec && ctx.rec.on && ctx.rec.li === li);
 
     // An action's payloads, fetched once however many ask for them.
     const ensure = (acts) => {
@@ -1905,6 +2081,7 @@
       ctx.state[li].cur = key;
       if (ctx.state[li].filter === 'failed' && !isBad(it)) ctx.state[li].filter = 'all';
       paint(li, true);
+      if (follows(li)) drawRecords();
       const box = boxOf(li);
       if (scroll && box) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
@@ -1915,6 +2092,7 @@
       if (to) {
         ctx.state[li].cur = to.key;
         paint(li, true);
+        if (follows(li)) drawRecords();
       }
     };
 
@@ -1943,8 +2121,22 @@
     };
 
     doc.addEventListener('click', (e) => {
-      const t = e.target && e.target.closest ? e.target.closest('a.rec,a.run,a.fn,a.fold,[data-go],[data-it],[data-f],.lp-nav,.lp-ci,.lp-cf') : null;
+      const t = e.target && e.target.closest ? e.target.closest('a.rec,a.run,a.fn,a.fold,[data-go],[data-it],[data-f],[data-rec],.lp-nav,.lp-ci,.lp-cf') : null;
       if (!t) return;
+      // Records: the whole run, or one iteration - stepped here as in the run's strip.
+      if (t.hasAttribute('data-rec')) {
+        e.preventDefault();
+        const what = t.getAttribute('data-rec');
+        if (!ctx.rec || t.disabled) return;
+        if (what === 'all' || what === 'it') {
+          ctx.rec.on = what === 'it';
+          return drawRecords();
+        }
+        const l = L[ctx.rec.li];
+        const to = l.iterations[l.iterations.indexOf(current(ctx.rec.li)) + (what === 'prev' ? -1 : 1)];
+        if (to) select(ctx.rec.li, to.key, false);
+        return;
+      }
       // A record opened from the Records column: a use of its own, per click.
       if (t.matches('a.run')) return DynaBoost.saved('flow-run-export', 'child');
       if (t.matches('a.rec')) return DynaBoost.saved('flow-run-export', 'record');
@@ -1963,6 +2155,13 @@
       else if (t.hasAttribute('data-f')) setFilter(li, t.getAttribute('data-f'));
       else if (t.classList.contains('lp-nav')) move(li, Number(t.getAttribute('data-step')));
       else copyLoop(li, t.classList.contains('lp-ci') ? 'one' : 'failed', t);
+    });
+
+    doc.addEventListener('change', (e) => {
+      const t = e.target;
+      if (!t || !t.hasAttribute || !t.hasAttribute('data-rec-loop') || !ctx.rec) return;
+      ctx.rec.li = Number(t.value);
+      drawRecords();
     });
 
     // ← and → step through the iterations of the loop in focus - or of the

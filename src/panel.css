@@ -62,6 +62,8 @@
 
 .db-head {
   position: relative;
+  /* Its own height always: a tall page of tiles must not squeeze it. */
+  flex: none;
   padding: 14px 14px 13px;
   background: linear-gradient(180deg, var(--db-navy-800), var(--db-navy-900));
   color: #eef3ff;
@@ -1046,19 +1048,27 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
 
 .db-scope {
   flex: none;
   margin-left: auto;
   white-space: nowrap;
-  padding: 5px 13px;
+  /* One width for Show all (n) and Show less, whatever the count: nothing in
+     the footer moves under the pointer. */
+  width: 99px;
+  height: 31px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  overflow: hidden;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
   border: 1px solid var(--db-hairline);
   border-radius: 20px;
   background: var(--db-surface);
   color: var(--db-ink-soft);
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1095,14 +1105,184 @@
   color: var(--db-blue);
 }
 
-.db-arrange + .db-scope {
+.db-arrange + .db-scope,
+.db-view + .db-scope {
   margin-left: 0;
+}
+
+/* ---------- Tiles or a compact list (core.js, setView) ----------
+   One capsule, as tall as the footer's other buttons: the pencil, a hairline,
+   then four squares and three bars - the view shown filled gold. */
+
+.db-view {
+  flex: none;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  height: 31px;
+  padding: 2px;
+  box-sizing: border-box;
+  border: 1px solid var(--db-hairline);
+  border-radius: 16px;
+  background: var(--db-surface);
+}
+
+.db-view button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 25px;
+  padding: 0;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  color: var(--db-ink-soft);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.db-view svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+/* the pencil as one of the capsule's buttons (its own look is for a pencil alone) */
+.db-view .db-arrange {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+}
+
+.db-view .db-arrange svg {
+  width: 15px;
+  height: 15px;
+}
+
+.db-view-sep {
+  flex: none;
+  width: 1px;
+  height: 15px;
+  margin: 0 2px;
+  background: var(--db-hairline);
+}
+
+.db-view button:hover {
+  color: var(--db-blue);
+}
+
+.db-view button[aria-pressed="true"] {
+  background: var(--db-gold);
+  color: #10224e;
+  cursor: default;
+}
+
+#dynaboost-root.db-dark .db-view button[aria-pressed="true"] {
+  color: #10224e;
+}
+
+.db-view button:focus-visible {
+  outline: 2px solid var(--db-blue);
+  outline-offset: 1px;
+}
+
+/* The list: two to a line, every row the same height whatever its name -
+   up to two lines, a smaller type first (equalTiles) - its icon on the
+   left, its switch or settings pencil on the right, in the middle of it. */
+#dynaboost-root.db-list .db-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 7px;
+}
+
+#dynaboost-root.db-list .db-tile {
+  height: 42px;
+  min-height: 0;
+  box-sizing: border-box;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  padding: 0 9px;
+  text-align: left;
+}
+
+#dynaboost-root.db-list .db-tile svg {
+  width: 18px;
+  height: 18px;
+}
+
+#dynaboost-root.db-list .db-tile-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+#dynaboost-root.db-list .db-tile-toggle {
+  padding-right: 31px;
+}
+
+#dynaboost-root.db-list .db-tile:has(.db-tile-set) {
+  padding-right: 30px;
+}
+
+#dynaboost-root.db-list .db-tile-toggle::before {
+  top: 50%;
+  right: 9px;
+  margin-top: -5px;
+}
+
+#dynaboost-root.db-list .db-tile-toggle[aria-pressed="true"]::after {
+  left: 8px;
+  bottom: 4px;
+}
+
+#dynaboost-root.db-list .db-tile-set {
+  top: 50%;
+  right: 6px;
+  margin-top: -11px;
+}
+
+
+/* NEW small in the row's upper left corner, over its icon - inside the frame, not on it. */
+#dynaboost-root.db-list .db-tile-new {
+  top: 3px;
+  left: 3px;
+  padding: 0 3px;
+  border-radius: 3px;
+  font-size: 7.5px;
+  line-height: 11px;
+}
+
+/* Arranging: the grip on the left, in the middle of the row; the switch
+   makes way, as nothing is switched meanwhile. */
+#dynaboost-root.db-list .db-arranging .db-tile {
+  padding: 0 9px 0 21px;
+}
+
+#dynaboost-root.db-list .db-arranging .db-tile-toggle::before,
+#dynaboost-root.db-list .db-arranging .db-tile-toggle::after {
+  display: none;
+}
+
+#dynaboost-root.db-list .db-arranging .db-grip {
+  top: 50%;
+  left: 7px;
+  margin-top: -6px;
 }
 
 .db-arrange-reset,
 .db-arrange-done,
 .db-arranging .db-thanks-btn,
 .db-arranging .db-arrange,
+.db-arranging .db-view,
 .db-arranging .db-scope {
   display: none;
 }
@@ -1285,21 +1465,23 @@
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 14px 5px 10px;
+  gap: 5px;
+  height: 31px;
+  box-sizing: border-box;
+  padding: 0 12px 0 9px;
   border: 1px solid var(--db-hairline);
   border-radius: 20px;
   background: var(--db-surface);
   color: var(--db-ink-soft);
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.5;
   white-space: nowrap;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 
 .db-thanks-btn svg {
-  width: 17px;
-  height: 17px;
+  width: 16px;
+  height: 16px;
   flex: none;
   transition: fill 0.15s, transform 0.2s;
 }
@@ -4502,11 +4684,26 @@
   box-shadow: 0 0 0 2px var(--db-gold), 0 0 0 6px rgba(227, 176, 75, 0.35), 0 0 22px rgba(227, 176, 75, 0.55);
 }
 
-/* A tool of another page: its tile stays grey, dashed in gold. */
-#dynaboost-root .db-tour-spot.db-tour-off {
-  box-shadow: 0 0 0 2px var(--db-gold), 0 0 0 6px rgba(227, 176, 75, 0.22);
-  outline: 1.5px dashed var(--db-gold);
-  outline-offset: 5px;
+/* A part of the panel that is not a tool (the footer's tiles / list switch): over the dim too. */
+#dynaboost-root .db-view.db-tour-spot {
+  position: relative;
+}
+
+/* A tool of another page, in the tour: lit as any other - in its colours, not
+   grey; the tip says where it works ("Not on this page"). */
+#dynaboost-root .db-tile-away.db-tour-spot {
+  border: 1px solid var(--db-gold);
+  background: var(--db-tile);
+  color: var(--db-ink);
+}
+
+#dynaboost-root .db-tile-away.db-tour-spot svg {
+  filter: none;
+  opacity: 1;
+}
+
+#dynaboost-root .db-tile-away.db-tour-spot .db-tile-name {
+  opacity: 1;
 }
 
 /* A tool's settings: the pencil in the tile's corner - where a switch has its
@@ -4557,6 +4754,58 @@
   font-weight: 700;
   line-height: 15px;
   letter-spacing: 0.04em;
+}
+
+/* Preview: a tool still being tried - a blue band at the tile's foot, in
+   the list a band down the row's right end; inside the frame, not on it. */
+.db-tile-preview {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 15px;
+  border-top: 1px solid #b9cdf5;
+  border-radius: 0 0 7px 7px;
+  background: #eef4ff;
+  color: #1e6bff;
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 15px;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.db-tile:has(.db-tile-preview) {
+  padding-bottom: 24px;
+}
+
+#dynaboost-root.db-list .db-tile:has(.db-tile-preview) {
+  padding-bottom: 0;
+  padding-right: 26px;
+}
+
+/* Read from the foot up: turned half round, so its line (border-right) shows on the left. */
+#dynaboost-root.db-list .db-tile-preview {
+  left: auto;
+  top: 0;
+  width: 18px;
+  height: auto;
+  border-top: 0;
+  border-right: 1px solid #b9cdf5;
+  border-radius: 7px 0 0 7px;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 7.5px;
+  line-height: 18px;
+  letter-spacing: 0.06em;
+}
+
+#dynaboost-root.db-dark .db-tile-preview {
+  border-color: #2c4a8a;
+  background: #172a55;
+  color: #8fb4ff;
 }
 
 .db-tour-tip .db-tile-new {

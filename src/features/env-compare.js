@@ -211,15 +211,25 @@
     }
   }
 
-  DynaBoost.envCompare = { read: read, environments: environments };
+  DynaBoost.envCompare = { read: read, environments: environments, mayOpen: (win, what, hosts, note) => mayOpen(win, what, hosts, note) };
 
   // { result } or { error: 'signin' | 'unreachable' | message }
+  const reading = new Map(); // host -> { n: reads running, idle }
   async function readAt(host, req) {
     if (host === location.hostname) {
       const r = await read(req);
       return r && r.error ? { error: r.error } : { result: r };
     }
-    return send({ type: 'DB_ENV_READ', host: host, req: req });
+    const at = reading.get(host) || { n: 0, idle: 0 };
+    reading.set(host, at);
+    at.n++;
+    clearTimeout(at.idle);
+    try {
+      return await send({ type: 'DB_ENV_READ', host: host, req: req });
+    } finally {
+      // Nothing more read there for a moment: the tab of our own on it goes now, not 12 s later.
+      if (!--at.n) at.idle = setTimeout(() => !at.n && send({ type: 'DB_ENV_DONE', host: host }), 900);
+    }
   }
 
   // ---------- the dialogs over the page ----------
@@ -254,10 +264,73 @@
     return overlay;
   }
 
+  const READS_ONLY = 'It only reads, with your own sign-in. Nothing is changed or sent anywhere else.';
+  const NEVER_TIP = 'From now on DynaBoost opens and closes these tabs without asking: make.powerapps.com for the list of your environments, and the other environment’s address to read from it. Only with your own sign-in. Turn asking back on with the switch in Compare.';
+
+  /* The same question in a tab a tool opened (User access, Copy data): the
+   * tab has none of the panel's styles, so the dialog brings its own. */
+  const ASK_CSS =
+    '.db-ask-bg{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-start;justify-content:center;padding-top:14vh;background:rgba(12,19,37,.32)}' +
+    '.db-ask{width:min(500px,calc(100vw - 32px));box-sizing:border-box;padding:18px 20px;border:1px solid var(--dbc-bd-dde3f0);border-radius:8px;background:var(--dbc-bg-fff);color:var(--dbc-fg-10224e);font:14px/1.45 "Segoe UI",system-ui,sans-serif;box-shadow:0 12px 40px rgba(12,19,37,.25)}' +
+    '.db-ask h2{margin:0 0 10px;font-size:16px;font-weight:600}.db-ask p{margin:0 0 10px;font-size:13.5px}.db-ask p.dim{color:var(--dbc-fg-56637f);font-size:12.5px}' +
+    '.db-ask .acts{display:flex;align-items:center;gap:8px;margin-top:14px}' +
+    '.db-ask button{padding:6px 14px;border:1px solid var(--dbc-bd-c6d0e4);border-radius:6px;background:var(--dbc-bg-fff);color:var(--dbc-fg-10224e);font:inherit;font-size:13px;cursor:pointer}' +
+    '.db-ask button.go{background:var(--dbc-bg-1e6bff);border-color:var(--dbc-bd-1e6bff);color:var(--dbc-fg-fff);font-weight:600}' +
+    '.db-ask label{display:inline-flex;align-items:center;gap:6px;margin-left:auto;font-size:12.5px;color:var(--dbc-fg-56637f);cursor:pointer}';
+  function askIn(win, what, hosts, note) {
+    return new Promise((resolve) => {
+      const d = win.document;
+      if (!d.getElementById('db-ask-css')) {
+        const st = d.createElement('style');
+        st.id = 'db-ask-css';
+        st.textContent = ASK_CSS;
+        d.head.appendChild(st);
+      }
+      const bg = d.createElement('div');
+      bg.className = 'db-ask-bg';
+      bg.innerHTML =
+        '<div class="db-ask" role="dialog" aria-modal="true" aria-label="Open a tab in the background?"><h2>Open a tab in the background?</h2>' +
+        '<p>To ' + esc(what) + ', DynaBoost opens <b>' + hosts.map(esc).join('</b>, <b>') + '</b> in a tab in the background for a moment and closes it again.</p>' +
+        '<p class="dim">' + esc(note || READS_ONLY) + '</p>' +
+        '<div class="acts"><button type="button" class="go" data-db="ok">OK</button><button type="button" data-db="cancel">Cancel</button>' +
+        '<label title="' + esc(NEVER_TIP) + '"><input type="checkbox" data-db="never"> Don’t ask again</label></div></div>';
+      d.body.appendChild(bg);
+      const q = (k) => bg.querySelector('[data-db="' + k + '"]');
+      const done = (ok) => {
+        d.removeEventListener('keydown', onKey, true);
+        const never = q('never').checked;
+        bg.remove();
+        if (ok && never) save({ [ASK_KEY]: false });
+        resolve(ok);
+      };
+      const onKey = (e) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          done(false);
+        }
+      };
+      d.addEventListener('keydown', onKey, true);
+      q('ok').addEventListener('click', () => done(true));
+      q('cancel').addEventListener('click', () => done(false));
+      bg.addEventListener('mousedown', (e) => e.target === bg && done(false));
+      q('ok').focus();
+    });
+  }
+
+  /* For every tool that reads another environment in a tab of its own: asked
+   * once per go, in the window the person is looking at (win: a tab a tool
+   * opened, or nothing for this page) - not at all once "Don't ask again"
+   * was ticked. True: go on. */
+  async function mayOpen(win, what, hosts, note) {
+    if (!hosts || !hosts.length) return true;
+    if ((await stored(ASK_KEY, true)) === false) return true;
+    return win && win !== window ? askIn(win, what, hosts, note) : askBackground(what, hosts.join(', '), note);
+  }
+
   /* Before a tab opens in the background: what opens, why, and that it
    * closes again. Resolves true for OK; "Don't ask again" turns the picker's
    * switch off. */
-  function askBackground(what, host) {
+  function askBackground(what, host, note) {
     return new Promise((resolve) => {
       const overlay = overlayOf('db-cmp-ask', 'Open a tab in the background?');
       overlay.style.zIndex = '2147483200';
@@ -265,12 +338,10 @@
       box.innerHTML =
         '<div class="db-dialog-head"><span>Open a tab in the background?</span><button type="button" data-db="x" aria-label="Close">✕</button></div>' +
         '<div class="db-cmp-text">To ' + esc(what) + ', DynaBoost opens <b>' + esc(host) + '</b> in a tab in the background for a moment and closes it again.</div>' +
-        '<div class="db-cmp-text db-cmp-dim">It only reads, with your own sign-in. Nothing is changed or sent anywhere else.</div>' +
+        '<div class="db-cmp-text db-cmp-dim">' + esc(note || READS_ONLY) + '</div>' +
         // "Don't ask again" on the right of the buttons, away from OK.
         '<div class="db-dialog-actions"><button type="button" class="db-primary" data-db="ok">OK</button><button type="button" data-db="cancel">Cancel</button>' +
-        '<label class="db-cmp-check" title="' + esc(
-          'From now on DynaBoost opens and closes these tabs without asking: make.powerapps.com for the list of your environments, and the other environment’s address to read from it. Only reading, with your own sign-in. Turn asking back on with the switch in Compare.'
-        ) + '"><input type="checkbox" data-db="never"> Don’t ask again</label></div>';
+        '<label class="db-cmp-check" title="' + esc(NEVER_TIP) + '"><input type="checkbox" data-db="never"> Don’t ask again</label></div>';
       const q = (k) => box.querySelector('[data-db="' + k + '"]');
       const done = (ok) => {
         document.removeEventListener('keydown', onKey, true);
@@ -556,7 +627,8 @@
       if (go.disabled || !picked) return;
       const host = picked.host;
       const env = { host: host, name: picked.name || (known().find((e) => e.host === host) || {}).name || '' };
-      const away = host !== here && !sources.open.includes(host);
+      // Another environment is read in a tab of our own, whether you have it open or not.
+      const away = host !== here;
       const job = what === 'record' ? { mode: 'records', env: env, id1: idFrom(q('id1').value), id2: idFrom(q('id2').value) } : { mode: 'config', env: env };
       if (away && ask) {
         // The click on OK is the one that may open the result tab.
@@ -1079,7 +1151,7 @@
       '<div id="v-form">' + F.html + '</div><div id="v-columns">' + C.html + '</div><div id="v-logic">' + L.html + '</div>';
     doc.body.classList.add('view-form');
     const lines = F.lines.concat(C.lines, L.lines);
-    get('status').textContent = lines.length ? lines.length + ' differences' : 'No differences';
+    get('status').textContent = lines.length ? lines.length + (lines.length === 1 ? ' difference' : ' differences') : 'No differences';
     wireView(tab, () => [names.here + ' ↔ ' + names.there + ' — ' + ctx.entityLabel + ' (' + ctx.entity + '), form ' + here.dump.form.name, ''].concat(lines.length ? lines : ['No differences.']).join('\n'), ['form', 'columns', 'logic']);
   }
 
@@ -1213,7 +1285,7 @@
       '<label><input type="checkbox" id="only-diff" checked> only differences</label>' +
       '<label title="Created and modified on and by, owner, version number and the like"><input type="checkbox" id="hide-sys" checked> hide system fields</label>' +
       '<input type="search" id="q" placeholder="Filter by name, label or value">' +
-      '<span class="status" id="status">' + (lines.length ? lines.length + ' differences' : 'No differences') + '</span>';
+      '<span class="status" id="status">' + (lines.length ? lines.length + (lines.length === 1 ? ' difference' : ' differences') : 'No differences') + '</span>';
     get('content').innerHTML =
       '<div class="cmp-cols"><span>Field</span><span class="ty">Type</span><span>' + esc(names.here) + ' · ' + esc(nameOf(here)) + (sameEnv ? '' : '<span class="here">here</span>') + '</span><span>' + esc(names.there) + ' · ' + esc(nameOf(there)) + '</span></div>' +
       '<div id="v-values"><div class="sec" data-alleq="0"><h3>' + esc(ctx.entityLabel) + '<span class="sec-n">' + (total - same) + ' of ' + total + ' differ</span></h3>' + rows.join('') + '</div></div>';

@@ -487,7 +487,7 @@
   const CSS =
     'html,body{height:100%}' +
     'body{margin:0;display:flex;flex-direction:column;font:14px/1.45 "Segoe UI",system-ui,sans-serif;color:var(--dbc-fg-10224e);background:var(--dbc-bg-f5f7fc)}' +
-    'header{flex:none;padding:14px 20px 12px}header h1{font-size:18px}' +
+    'header{flex:none;padding:16px 22px 12px}' +
     'code{font:12.5px ui-monospace,Consolas,monospace;color:var(--dbc-fg-56637f)}' +
     '.fe{flex:1;overflow:auto;padding:16px 20px 20px}' +
     '.fe-card{padding:14px 16px 16px;background:var(--dbc-bg-fff);border:1px solid var(--dbc-bd-dde3f0);border-radius:8px}' +

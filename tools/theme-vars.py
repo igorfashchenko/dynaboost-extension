@@ -33,6 +33,8 @@ FILES = [
     'src/features/wiki-tree.js',
     'src/features/canvas-check.js',
     'src/features/record-history.js',
+    'src/features/view-columns.js',
+    'src/features/plugin-traces.js',
     'src/help.js',
 ]
 

@@ -470,6 +470,8 @@
     let got;
     try {
       got = await chrome.runtime.sendMessage({ type: 'DB_ENV_APP_SOLUTIONS', host: new URL(pin.url).hostname, app: pin.app });
+      // Read once: the tab of our own on that environment goes now.
+      chrome.runtime.sendMessage({ type: 'DB_ENV_DONE', host: new URL(pin.url).hostname }).catch(() => {});
     } catch (e) {
       got = { error: e.message };
     }

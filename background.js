@@ -107,13 +107,13 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
 // ---------- backups kept in this browser ----------
 
-/* Edit flow and Edit journey keep the version a save replaces, in
+/* Edit flow, Edit journey and Copy view columns keep the version a save replaces, in
  * chrome.storage.local: the 5 newest of each, none older than 14 days (the
  * editors trim them when they save). Trimmed here too when the browser starts
  * or DynaBoost is installed or updated, so old ones go even if the editor is
  * never opened again. A flow backup older than this rule kept the flow twice
  * (as text and as objects): only the text stays. */
-const BACKUPS = ['dynaboost.flowBackups', 'dynaboost.journeyBackups'];
+const BACKUPS = ['dynaboost.flowBackups', 'dynaboost.journeyBackups', 'dynaboost.viewBackups'];
 const BACKUPS_KEPT = 5;
 const BACKUP_DAYS = 14;
 
@@ -145,8 +145,8 @@ chrome.runtime.onInstalled.addListener(() => trimBackups().catch(() => {}));
 // ---------- another environment, for the compare tools ----------
 
 /* Compare (env-compare.js) reads the other
- * environment in a tab of its own - one the user has open, or one opened in
- * the background for the moment and closed again - with the user's own
+ * environment in a tab of its own - opened in the background for the moment
+ * and closed again (tabFor) - with the user's own
  * sign-in. Nothing is read across sites. The list of environments comes from
  * the maker portal - what its own answer held (names and addresses), read in
  * a make.powerapps.com tab the same way.
@@ -245,140 +245,59 @@ async function appSolutionsHere(app) {
   }
 }
 
+/* Not signed in to an environment, its Web API answers 401 with no page at
+ * all: the browser shows its own error page, and nothing can be run in it.
+ * PAGE_DOWN stands for that answer - the tab then goes through the sign-in. */
+const PAGE_DOWN = { error: 'HTTP 401 (the page did not load)' };
+/* A call into a page that goes away under it (the app, sent on to another
+ * address while it loads) never answers: after a while it is given up, said
+ * and not waited for. */
+const RUN_MS = 90000;
+const runInPage = (tabId, func, args) => {
+  // A long read is not cut by this script being put to sleep under it.
+  const beat = setInterval(awake, 15000);
+  return Promise.race([
+    runIn(tabId, func, args).catch((e) => (/error page/i.test(e.message) ? PAGE_DOWN : Promise.reject(e))),
+    pause(RUN_MS).then(() => ({ error: 'No answer from the environment in ' + RUN_MS / 1000 + ' s - try again.' }))
+  ]).finally(() => clearInterval(beat));
+};
+
+/* A tab of our own through the sign-in, as opening the app would - then back
+ * on the Web API's own address: a page that goes nowhere while a call runs
+ * in it (the app's page is sent on while it loads, and takes the call with
+ * it). 'ok', 'signin' or what settle() says. */
+async function throughSignIn(tabId, host) {
+  await chrome.tabs.update(tabId, { url: 'https://' + host + '/main.aspx' });
+  const state = await settle(tabId, host, 30000);
+  if (state !== 'ok') return state;
+  await chrome.tabs.update(tabId, { url: 'https://' + host + '/api/data/v9.2/' });
+  await pause(400);
+  return settle(tabId, host, 20000);
+}
+
 async function runInEnvironment(host, func, args, opener) {
-  let tab = await tabOnHost(host);
-  let ours = false;
+  const key = host + (opener && opener.incognito ? ' incognito' : '');
+  let held = 0;
   try {
-    if (!tab) {
-      ours = true;
-      tab = await chrome.tabs.create({ url: 'https://' + host + '/api/data/v9.2/', active: false, windowId: opener.windowId, index: opener.index + 1 });
-      const state = await settle(tab.id, host, 30000);
-      if (state === 'signin') return { error: 'signin' };
-      if (state !== 'ok') return { error: 'unreachable' };
-    }
-    let result = await runIn(tab.id, func, args);
+    const got = await tabFor(host, opener, key, true);
+    if (got.error) return { error: got.error };
+    const tab = got.tab;
+    held = got.held;
+    const ours = !!held;
+    let result = await runInPage(tab.id, func, args);
     // The Web API answered 401: the environment wants a sign-in - in a tab of
     // our own, go through it once, as opening the app would.
     if (result && /^HTTP 401\b/.test(result.error || '') && ours) {
-      await chrome.tabs.update(tab.id, { url: 'https://' + host + '/main.aspx' });
-      const state = await settle(tab.id, host, 30000);
+      const state = await throughSignIn(tab.id, host);
       if (state !== 'ok') return { error: state === 'signin' ? 'signin' : 'unreachable' };
-      result = await runIn(tab.id, func, args);
+      result = await runInPage(tab.id, func, args);
     }
     if (result && /^HTTP 40[13]\b/.test(result.error || '')) return { error: 'signin', detail: result.error };
     return result && result.error ? { error: result.error } : { result: result };
   } catch (e) {
     return { error: e.message };
   } finally {
-    if (ours && tab) chrome.tabs.remove(tab.id).catch(() => {});
-  }
-}
-
-/* User access (user-access.js): one user in an environment - found by their
- * Entra ID object id, else their user name or email - with their roles, their
- * teams and the teams' roles. With a change, roles are given or taken first,
- * by name: a role is per business unit, so the one of the user's own unit.
- * Self-contained: it runs in a tab of that environment. */
-async function userAccessHere(who, change) {
-  const API = '/api/data/v9.2/';
-  const FMT = '@OData.Community.Display.V1.FormattedValue';
-  const call = async (method, path, body) => {
-    const res = await fetch(API + path, {
-      method: method,
-      credentials: 'same-origin',
-      headers: Object.assign(
-        { Accept: 'application/json', 'OData-MaxVersion': '4.0', 'OData-Version': '4.0', Prefer: 'odata.include-annotations="' + FMT.slice(1) + '"' },
-        body ? { 'Content-Type': 'application/json' } : {}
-      ),
-      body: body ? JSON.stringify(body) : undefined
-    });
-    if (!res.ok) {
-      let m = '';
-      try {
-        m = (await res.json()).error.message;
-      } catch (e) {
-        /* no JSON */
-      }
-      throw new Error('HTTP ' + res.status + (m ? ': ' + m : ''));
-    }
-    return res.status === 204 ? null : res.json();
-  };
-  const get = (path) => call('GET', path);
-  const q = (v) => String(v).replace(/'/g, "''");
-  try {
-    const sel = '$select=systemuserid,fullname,domainname,internalemailaddress,isdisabled,accessmode,islicensed,azureactivedirectoryobjectid,_businessunitid_value,title,_parentsystemuserid_value';
-    const find = async (filter) => ((await get('systemusers?' + sel + '&$filter=' + encodeURIComponent(filter) + '&$top=1')).value || [])[0];
-    let u = null;
-    if (who.id && /^[0-9a-f-]{36}$/i.test(who.id)) u = await find('systemuserid eq ' + who.id);
-    if (!u && who.aad && /^[0-9a-f-]{36}$/i.test(who.aad)) u = await find('azureactivedirectoryobjectid eq ' + who.aad);
-    if (!u && who.domain) u = await find("domainname eq '" + q(who.domain) + "'");
-    if (!u && who.email) u = await find("internalemailaddress eq '" + q(who.email) + "'");
-    if (!u) return { missing: true };
-    const id = u.systemuserid;
-    const rolesNow = async () => (await get('systemusers(' + id + ')/systemuserroles_association?$select=name,roleid')).value || [];
-    const done = [];
-    if (change) {
-      const have = await rolesNow();
-      for (const name of change.add || []) {
-        const role = ((await get('roles?$select=roleid,name&$filter=' + encodeURIComponent("name eq '" + q(name) + "' and _businessunitid_value eq " + u._businessunitid_value) + '&$top=1')).value || [])[0];
-        if (!role) {
-          done.push({ name: name, op: 'add', status: 'missing' });
-          continue;
-        }
-        if (have.some((r) => r.roleid === role.roleid)) {
-          done.push({ name: name, op: 'add', status: 'had' });
-          continue;
-        }
-        try {
-          await call('POST', 'systemusers(' + id + ')/systemuserroles_association/$ref', { '@odata.id': location.origin + API + 'roles(' + role.roleid + ')' });
-          done.push({ name: name, op: 'add', status: 'ok' });
-        } catch (e) {
-          done.push({ name: name, op: 'add', status: 'error', error: e.message });
-        }
-      }
-      for (const name of change.remove || []) {
-        const role = have.find((r) => r.name === name);
-        if (!role) {
-          done.push({ name: name, op: 'remove', status: 'had' });
-          continue;
-        }
-        try {
-          await call('DELETE', 'systemusers(' + id + ')/systemuserroles_association(' + role.roleid + ')/$ref');
-          done.push({ name: name, op: 'remove', status: 'ok' });
-        } catch (e) {
-          done.push({ name: name, op: 'remove', status: 'error', error: e.message });
-        }
-      }
-    }
-    const [roles, teams, profiles] = await Promise.all([
-      rolesNow(),
-      get('systemusers(' + id + ')/teammembership_association?$select=name,teamid,teamtype,isdefault').then((r) => r.value || []),
-      // Field security profiles - not readable without the right: none then.
-      get('systemusers(' + id + ')/systemuserprofiles_association?$select=name').then((r) => (r.value || []).map((x) => x.name), () => null)
-    ]);
-    const teamRoles = await Promise.all(
-      teams.map((t) => get('teams(' + t.teamid + ')/teamroles_association?$select=name').then((r) => (r.value || []).map((x) => x.name), () => []))
-    );
-    return {
-      user: {
-        name: u.fullname || u.domainname || '',
-        email: u.internalemailaddress || '',
-        domain: u.domainname || '',
-        aad: u.azureactivedirectoryobjectid || '',
-        disabled: !!u.isdisabled,
-        access: u['accessmode' + FMT] || String(u.accessmode),
-        licensed: u.islicensed === true ? 'Yes' : u.islicensed === false ? 'No' : '',
-        bu: u['_businessunitid_value' + FMT] || '',
-        title: u.title || '',
-        manager: u['_parentsystemuserid_value' + FMT] || ''
-      },
-      profiles: profiles,
-      roles: roles.map((r) => r.name).sort((a, b) => a.localeCompare(b)),
-      teams: teams.map((t, i) => ({ name: t.name, type: t['teamtype' + FMT] || String(t.teamtype), isDefault: !!t.isdefault, roles: teamRoles[i] })),
-      done: done
-    };
-  } catch (e) {
-    return { error: e.message };
+    if (held) releaseApiTab(key, held);
   }
 }
 
@@ -456,22 +375,235 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     refreshEnvironments(sender.tab, String(msg.job || ''), !!msg.fresh).then(reply);
     return true;
   }
-  if (msg.type === 'DB_ENV_USER') {
-    const who = msg.who && typeof msg.who === 'object' ? { id: String(msg.who.id || ''), aad: String(msg.who.aad || ''), domain: String(msg.who.domain || ''), email: String(msg.who.email || '') } : {};
-    const list = (v) => (Array.isArray(v) ? v.map((x) => String(x).slice(0, 200)).slice(0, 200) : []);
-    const change = msg.change ? { add: list(msg.change.add), remove: list(msg.change.remove) } : null;
-    runInEnvironment(host, userAccessHere, [who, change], sender.tab).then(reply);
-    return true;
-  }
   if (msg.type === 'DB_ENV_APP_SOLUTIONS') {
     runInEnvironment(host, appSolutionsHere, [String(msg.app || '').slice(0, 120)], sender.tab).then(reply);
+    return true;
+  }
+  if (msg.type === 'DB_ENV_API') {
+    const calls = (Array.isArray(msg.calls) ? msg.calls : []).slice(0, 60).map((c) => ({
+      method: /^(GET|POST|PATCH)$/.test(c && c.method) ? c.method : 'GET',
+      path: String((c && c.path) || ''),
+      body: c && c.body !== undefined ? c.body : undefined,
+      prefer: c && typeof c.prefer === 'string' ? c.prefer : undefined
+    }));
+    if (!calls.length || !calls.every(apiCallOk)) {
+      reply({ error: 'Not a call DynaBoost makes.' });
+      return;
+    }
+    apiInEnvironment(host, calls, !!msg.serial, sender.tab).then(reply);
     return true;
   }
   if (msg.type === 'DB_ENV_CANCEL') {
     cancelEnvJob(sender.tab, String(msg.job || ''));
     return;
   }
+  if (msg.type === 'DB_ENV_DONE') {
+    // A tool has read what it wanted of an environment: our tab of it goes now, not a little later.
+    doneWithTab(host + (sender.tab.incognito ? ' incognito' : ''));
+    return;
+  }
 });
+
+// ---------- Copy view columns: an environment's Web API, from make.powerapps.com ----------
+
+/* make.powerapps.com cannot call the Web API of the environment it shows -
+ * Copy view columns (view-columns.js) asks here instead: a batch of calls,
+ * run in a tab of that environment with its sign-in - one opened in the
+ * background (tabFor) and kept a little while after the last batch, so that
+ * the next one does not wait for a tab again, unless the tool says it is done. Only the calls the tool makes, each with its method:
+ * views, the tables' definitions, publishing, solutions. */
+const API_CALLS = {
+  GET: /^(savedqueries[(?/]|EntityDefinitions\(|solutions\(|solutioncomponents\?|RetrieveCurrentOrganization\()/,
+  PATCH: /^savedqueries\([0-9a-f-]{36}\)$/,
+  POST: /^(savedqueries(\?|$)|PublishXml$|AddSolutionComponent$)/
+};
+// No dot segments, no other address: they would leave the path.
+const pathOk = (path) => !/\.\.|%2e|\\|^[a-z]+:|^\/\//i.test(path);
+const apiCallOk = (c) => pathOk(c.path) && API_CALLS[c.method].test(c.path);
+
+// Under the 30 s Chrome gives an idle service worker: the timer that closes the tab must still be there.
+const API_TAB_KEPT = 12000;
+const apiTabs = new Map(); // host (+ incognito) -> { id, runs, timer, born } - a tab DynaBoost opened
+
+/* Chrome puts this background script to sleep after 30 s with nothing to
+ * do - a call still running in a page, or a timer still to fire, does not
+ * count. awake() says "still here" (any extension call does), so a wait
+ * that matters is not cut: called while a call runs in a page, and when a
+ * tab of our own is left to be closed a little later. */
+const awake = () => chrome.runtime.getPlatformInfo().catch(() => {});
+
+/* The tabs of our own that are open, by id, in the browser's session memory:
+ * should this script be put to sleep before it closed one, the next time it
+ * wakes - at any click on DynaBoost - it closes what was left. */
+const OWN_TABS_KEY = 'dynaboost.ownTabs';
+let ownTabs = Promise.resolve();
+const noteOwnTab = (id, open) => {
+  ownTabs = ownTabs
+    .then(() => chrome.storage.session.get(OWN_TABS_KEY))
+    .then((d) => {
+      const ids = new Set(d[OWN_TABS_KEY] || []);
+      if (open) ids.add(id);
+      else ids.delete(id);
+      return chrome.storage.session.set({ [OWN_TABS_KEY]: Array.from(ids) });
+    })
+    .catch(() => {});
+};
+// Woken up: nothing of ours runs any more, so a tab still on the list was left behind.
+chrome.storage.session
+  .get(OWN_TABS_KEY)
+  .then((d) => {
+    const left = (d[OWN_TABS_KEY] || []).filter((id) => !Array.from(apiTabs.values()).some((k) => k.id === id));
+    left.forEach((id) => chrome.tabs.remove(id).catch(() => {}));
+    if (left.length) left.forEach((id) => noteOwnTab(id, false));
+  })
+  .catch(() => {});
+
+async function apiHere(calls, serial) {
+  const one = async (c) => {
+    try {
+      const res = await fetch('/api/data/v9.2/' + c.path, {
+        method: c.method,
+        credentials: 'same-origin',
+        headers: Object.assign(
+          { Accept: 'application/json', 'OData-MaxVersion': '4.0', 'OData-Version': '4.0', Prefer: c.prefer || 'odata.include-annotations="*"' },
+          c.body !== undefined ? { 'Content-Type': 'application/json; charset=utf-8' } : {},
+          // A row only made (never written over), or only changed (never made).
+          c.match === 'new' ? { 'If-None-Match': '*' } : c.match === 'there' ? { 'If-Match': '*' } : {}
+        ),
+        body: c.body !== undefined ? JSON.stringify(c.body) : undefined
+      });
+      const text = await res.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch (e) {
+        /* not JSON */
+      }
+      if (!res.ok) return { status: res.status, error: (data && data.error && data.error.message) || 'HTTP ' + res.status };
+      return { status: res.status, data: data };
+    } catch (e) {
+      return { status: 0, error: e.message };
+    }
+  };
+  if (!serial) return Promise.all(calls.map(one));
+  const out = [];
+  for (const c of calls) out.push(await one(c));
+  return out;
+}
+
+// A batch runs in our tab: nothing closes it meanwhile.
+function holdApiTab(key, id) {
+  const kept = apiTabs.get(key);
+  if (kept) clearTimeout(kept.timer);
+  const same = kept && kept.id === id;
+  apiTabs.set(key, { id: id, runs: (same ? kept.runs : 0) + 1, timer: null, born: same ? kept.born : Date.now() });
+  if (!same) noteOwnTab(id, true);
+}
+// A tool is done with an environment: the tab of our own goes at once - unless a call still runs in it.
+function doneWithTab(key) {
+  const kept = apiTabs.get(key);
+  if (!kept || kept.runs > 0) return;
+  clearTimeout(kept.timer);
+  apiTabs.delete(key);
+  chrome.tabs.remove(kept.id).catch(() => {});
+  noteOwnTab(kept.id, false);
+}
+// The last batch is over: the tab goes a little later, unless another comes -
+// or at once, when the tool says it is done (DB_ENV_DONE). The wait is what
+// is left for a tool that does not say.
+function releaseApiTab(key, id) {
+  const kept = apiTabs.get(key);
+  if (!kept || kept.id !== id || --kept.runs > 0) return;
+  // Still here until the tab is closed.
+  awake();
+  kept.timer = setTimeout(() => {
+    if (apiTabs.get(key) === kept) apiTabs.delete(key);
+    chrome.tabs.remove(id).catch(() => {});
+    noteOwnTab(id, false);
+  }, API_TAB_KEPT);
+}
+
+/* The tab a call into an environment runs in. The one the tool was started
+ * from, when it is that environment's and may be used - it is awake: its
+ * page is running the tool. Else a tab of our own, opened in the background
+ * on the Web API's address and kept a little while. Never another tab you
+ * happen to have open: a tab in the background may be asleep - browsers put
+ * them to sleep - and a call would wait in it until you looked at it.
+ * { tab, held (our tab's id, to release) } or { error }. */
+const API_TAB_AGE = 120000; // a tab of our own older than this is not taken up again: a new one
+const opening = new Map(); // key -> the tab of our own being opened
+async function tabFor(host, opener, key, borrow) {
+  if (borrow && opener && hostOf(opener.url) === host) return { tab: opener, held: 0 };
+  for (let turn = 0; turn < 6; turn++) {
+    const kept = apiTabs.get(key);
+    if (kept) {
+      const tab = await chrome.tabs.get(kept.id).catch(() => null);
+      if (tab && !tab.discarded && !tab.frozen && (kept.runs > 0 || Date.now() - kept.born < API_TAB_AGE)) {
+        holdApiTab(key, tab.id);
+        return { tab: tab, held: tab.id };
+      }
+      if (apiTabs.get(key) === kept) {
+        clearTimeout(kept.timer);
+        apiTabs.delete(key);
+        if (tab) chrome.tabs.remove(tab.id).catch(() => {});
+        noteOwnTab(kept.id, false);
+      }
+      continue;
+    }
+    // Another call is opening one: wait for it and take the same.
+    if (opening.has(key)) {
+      await opening.get(key).catch(() => {});
+      continue;
+    }
+    const p = (async () => {
+      const tab = await chrome.tabs.create({ url: 'https://' + host + '/api/data/v9.2/', active: false, windowId: opener.windowId, index: opener.index + 1 });
+      holdApiTab(key, tab.id);
+      return { tab: tab, state: await settle(tab.id, host, 30000) };
+    })();
+    opening.set(key, p);
+    try {
+      const r = await p;
+      if (r.state === 'ok') return { tab: r.tab, held: r.tab.id };
+      const mine = apiTabs.get(key);
+      if (mine && mine.id === r.tab.id) apiTabs.delete(key);
+      chrome.tabs.remove(r.tab.id).catch(() => {});
+      noteOwnTab(r.tab.id, false);
+      return { error: r.state === 'signin' ? 'signin' : 'unreachable' };
+    } finally {
+      opening.delete(key);
+    }
+  }
+  return { error: 'unreachable' };
+}
+
+async function apiInEnvironment(host, calls, serial, opener) {
+  const key = host + (opener.incognito ? ' incognito' : '');
+  let held = 0; // our tab, held while this batch runs
+  try {
+    // The tab it was started from, unless it impersonates someone: the calls are yours.
+    const imp = (await chrome.storage.session.get(IMP_KEY + opener.id))[IMP_KEY + opener.id];
+    const got = await tabFor(host, opener, key, !imp);
+    if (got.error) return { error: got.error };
+    const tab = got.tab;
+    held = got.held;
+    const ours = !!held;
+    // Writes go once: a 401 answers before anything is done, so only then is it tried again.
+    let result = await runInPage(tab.id, apiHere, [calls, serial]);
+    const refused = (r) => r === PAGE_DOWN || (Array.isArray(r) && r.some((x) => x.status === 401));
+    if (refused(result) && ours) {
+      // The environment wants a sign-in - in our tab, go through it once, as opening the app would.
+      const state = await throughSignIn(tab.id, host);
+      if (state !== 'ok') return { error: state === 'signin' ? 'signin' : 'unreachable' };
+      result = await runInPage(tab.id, apiHere, [calls, serial]);
+    }
+    if (refused(result)) return { error: 'signin' };
+    return Array.isArray(result) ? { result: result } : { error: 'No answer from the environment.' };
+  } catch (e) {
+    return { error: e.message };
+  } finally {
+    if (held) releaseApiTab(key, held);
+  }
+}
 
 // ---------- Edit flow: a solution flow's draft, in its Dynamics tab ----------
 
@@ -829,7 +961,12 @@ const SAVED = {
   'ctrl-save': 2,
   'panel-scroll': 2,
   'form-dump:code': 30,
-  'form-dump:edit': 30
+  'form-dump:edit': 30,
+  'view-columns': 60, // one Apply
+  'view-columns:duplicate': 15, // one new view
+  'copy-code': 5, // one copy of a web resource's code
+  'copy-choices': 5, // one copy of a choice's options
+  'plugin-traces': 45 // one tab opened
 };
 const SAVED_KEY = 'dynaboost.saved';
 let savedQueue = Object.create(null);
